@@ -5,11 +5,16 @@ set -euo pipefail
 DB_PORT="${DB_PORT:-3306}"
 : "${DB_USER:?DB_USER is required}"
 : "${DB_PASSWORD:?DB_PASSWORD is required}"
-: "${DB_NAME:?DB_NAME is required}"
+: DB_NAME="${DB_NAME:-}"
 : "${S3_BUCKET:?S3_BUCKET is required}"
 
 if [ -z "${S3_KEY:-}" ]; then
-  S3_KEY="${DB_NAME}-$(date -u +%Y-%m-%dT%H:%M:%SZ).sql.gz"
+  if [ -n "$DB_NAME" ]; then
+    prefix="$DB_NAME"
+  else
+    prefix="all"
+  fi
+  S3_KEY="${prefix}-$(date -u +%Y-%m-%dT%H:%M:%SZ).sql.gz"
 fi
 
 if [ -n "${S3_EXPIRES_DAYS:-}" ]; then
@@ -38,8 +43,13 @@ if [ -n "${S3_ENDPOINT_URL:-}" ]; then
   ENDPOINT_OPT="--endpoint-url ${S3_ENDPOINT_URL}"
 fi
 
-mysqldump -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-  | gzip > /tmp/dump.sql.gz
+if [ -n "$DB_NAME" ]; then
+  mysqldump -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
+    | gzip > /tmp/dump.sql.gz
+else
+  mysqldump -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --all-databases \
+    | gzip > /tmp/dump.sql.gz
+fi
 
 aws s3 cp /tmp/dump.sql.gz "s3://${S3_BUCKET}/${S3_KEY}" $ENDPOINT_OPT $EXPIRE_OPT
 rm /tmp/dump.sql.gz
