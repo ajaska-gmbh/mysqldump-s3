@@ -5,7 +5,7 @@ set -euo pipefail
 DB_PORT="${DB_PORT:-3306}"
 : "${DB_USER:?DB_USER is required}"
 : "${DB_PASSWORD:?DB_PASSWORD is required}"
-: DB_NAME="${DB_NAME:-}"
+DB_NAME="${DB_NAME:-}"
 : "${S3_BUCKET:?S3_BUCKET is required}"
 
 if [ -z "${S3_KEY:-}" ]; then
