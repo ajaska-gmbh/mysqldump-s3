@@ -44,10 +44,10 @@ if [ -n "${S3_ENDPOINT_URL:-}" ]; then
 fi
 
 if [ -n "$DB_NAME" ]; then
-  mysqldump -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" --compress --verbose  \
+  mysqldump -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" --compress --verbose --lock-tables=false  \
     | gzip > /tmp/dump.sql.gz
 else
-  mysqldump -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --all-databases --compress --verbose  \
+  mysqldump -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --all-databases --compress --verbose --lock-tables=false  \
     | gzip > /tmp/dump.sql.gz
 fi
 
