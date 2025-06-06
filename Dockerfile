@@ -1,12 +1,14 @@
-FROM alpine:3.18
+FROM ubuntu:22.04
 
-RUN apk update && \
-    apk add --no-cache \
-      mariadb-client \
-      mariadb-connector-c \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      mysql-client \
       python3 \
-      py3-pip && \
-    pip3 install --no-cache-dir awscli
+      python3-pip \
+      ca-certificates && \
+    pip3 install --no-cache-dir awscli && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
