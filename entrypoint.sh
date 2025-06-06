@@ -33,8 +33,13 @@ if [ -n "${S3_EXPIRES:-}" ]; then
   EXPIRE_OPT="--expires ${S3_EXPIRES}"
 fi
 
+ENDPOINT_OPT=""
+if [ -n "${S3_ENDPOINT_URL:-}" ]; then
+  ENDPOINT_OPT="--endpoint-url ${S3_ENDPOINT_URL}"
+fi
+
 mysqldump -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
   | gzip > /tmp/dump.sql.gz
 
-aws s3 cp /tmp/dump.sql.gz "s3://${S3_BUCKET}/${S3_KEY}" $EXPIRE_OPT
+aws s3 cp /tmp/dump.sql.gz "s3://${S3_BUCKET}/${S3_KEY}" $ENDPOINT_OPT $EXPIRE_OPT
 rm /tmp/dump.sql.gz

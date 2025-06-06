@@ -24,6 +24,7 @@ docker run --rm \
   [-e S3_KEY=path/to/dump.sql.gz] \
   [-e S3_EXPIRES=2023-01-01T00:00:00Z] \
   [-e S3_EXPIRES_DAYS=7] \
+  [-e S3_ENDPOINT_URL=https://s3.de.io.cloud.ovh.net] \
   docker-mysqldump-s3
 ```
 
@@ -43,6 +44,7 @@ docker run --rm \
 | S3_KEY                | No       | <db_name>-<timestamp>.sql.gz     | S3 object key (path)                                   |
 | S3_EXPIRES            | No       |                                  | ISO 8601 timestamp to set the `Expires` header on the S3 object (ignored if `S3_EXPIRES_DAYS` is set) |
 | S3_EXPIRES_DAYS       | No       |                                  | Number of days from now to set the `Expires` header on the S3 object (overrides `S3_EXPIRES`) |
+| S3_ENDPOINT_URL       | No       | AWS CLI default                  | Custom S3 endpoint URL (e.g. https://s3.de.io.cloud.ovh.net) |
 
 ## Listing and Restoring Backups
 
@@ -51,12 +53,14 @@ Two helper scripts are provided in the `scripts/` directory to list existing bac
 ```sh
 # List all backups in the S3 bucket
 S3_BUCKET=your-s3-bucket AWS_ACCESS_KEY_ID=your-access-key-id AWS_SECRET_ACCESS_KEY=your-secret-access-key AWS_DEFAULT_REGION=your-aws-region \
+  S3_ENDPOINT_URL=https://s3.de.io.cloud.ovh.net \
   sh scripts/list-backups.sh
 
 # Restore a specific backup
 S3_BUCKET=your-s3-bucket S3_KEY=path/to/backup.sql.gz \
   DB_HOST=your-db-host DB_PORT=3306 DB_USER=your-db-user DB_PASSWORD=your-db-password DB_NAME=your-db-name \
   AWS_ACCESS_KEY_ID=your-access-key-id AWS_SECRET_ACCESS_KEY=your-secret-access-key AWS_DEFAULT_REGION=your-aws-region \
+  S3_ENDPOINT_URL=https://s3.de.io.cloud.ovh.net \
   sh scripts/restore-backup.sh
 ```
 
