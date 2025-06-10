@@ -8,13 +8,17 @@ DB_PORT="${DB_PORT:-3306}"
 DB_NAME="${DB_NAME:-}"
 : "${S3_BUCKET:?S3_BUCKET is required}"
 
+TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 if [ -z "${S3_KEY:-}" ]; then
   if [ -n "$DB_NAME" ]; then
     prefix="$DB_NAME"
   else
     prefix="all"
   fi
-  S3_KEY="${prefix}-$(date -u +%Y-%m-%dT%H:%M:%SZ).sql.gz"
+  S3_KEY="${prefix}-${TIMESTAMP}.sql.gz"
+else
+  # Append timestamp to the provided S3_KEY
+  S3_KEY="${S3_KEY}-${TIMESTAMP}.sql.gz"
 fi
 
 if [ -n "${S3_EXPIRES_DAYS:-}" ]; then

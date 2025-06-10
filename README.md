@@ -41,7 +41,7 @@ docker run --rm \
 | AWS_SECRET_ACCESS_KEY | Yes      |                                  | AWS secret access key                                  |
 | AWS_DEFAULT_REGION    | No       | AWS CLI default                  | AWS region                                             |
 | S3_BUCKET             | Yes      |                                  | S3 bucket name                                         |
-| S3_KEY                | No       | <db_name or all>-<timestamp>.sql.gz | S3 object key (path)                                   |
+| S3_KEY                | No       | <db_name or all>-<timestamp>.sql.gz | S3 object key (path). A timestamp will always be appended to the key. |
 | S3_EXPIRES            | No       |                                  | ISO 8601 timestamp to set the `Expires` header on the S3 object (ignored if `S3_EXPIRES_DAYS` is set) |
 | S3_EXPIRES_DAYS       | No       |                                  | Number of days from now to set the `Expires` header on the S3 object (overrides `S3_EXPIRES`) |
 | S3_ENDPOINT_URL       | No       | AWS CLI default                  | Custom S3 endpoint URL (e.g. https://s3.de.io.cloud.ovh.net) |
