@@ -5,7 +5,8 @@ RUN apt-get update && \
       mysql-client \
       python3 \
       python3-pip \
-      ca-certificates && \
+      ca-certificates \
+      bash && \
     pip3 install --no-cache-dir awscli && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
