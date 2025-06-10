@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+# If RESTORE is set to true, open a shell
+if [ "${RESTORE:-false}" = "true" ]; then
+  echo "Opening a shell for restore operations..."
+  exec /bin/bash
+fi
+
 : "${DB_HOST:?DB_HOST is required}"
 DB_PORT="${DB_PORT:-3306}"
 : "${DB_USER:?DB_USER is required}"
@@ -21,27 +27,6 @@ else
   S3_KEY="${S3_KEY}-${TIMESTAMP}.sql.gz"
 fi
 
-if [ -n "${S3_EXPIRES_DAYS:-}" ]; then
-  if ! echo "$S3_EXPIRES_DAYS" | grep -Eq '^[0-9]+$'; then
-    echo "Invalid S3_EXPIRES_DAYS: must be an integer number of days" >&2
-    exit 1
-  fi
-  S3_EXPIRES=$(python3 - << 'EOF'
-import datetime, os, sys
-try:
-    days = int(os.environ['S3_EXPIRES_DAYS'])
-except (KeyError, ValueError):
-    sys.exit("Invalid S3_EXPIRES_DAYS: must be an integer number of days")
-print((datetime.datetime.utcnow() + datetime.timedelta(days=days)).strftime('%Y-%m-%dT%H:%M:%SZ'))
-EOF
-)
-fi
-
-EXPIRE_OPT=""
-if [ -n "${S3_EXPIRES:-}" ]; then
-  EXPIRE_OPT="--expires ${S3_EXPIRES}"
-fi
-
 ENDPOINT_OPT=""
 if [ -n "${S3_ENDPOINT_URL:-}" ]; then
   ENDPOINT_OPT="--endpoint-url ${S3_ENDPOINT_URL}"
@@ -55,5 +40,5 @@ else
     | gzip > /tmp/dump.sql.gz
 fi
 
-aws s3 cp /tmp/dump.sql.gz "s3://${S3_BUCKET}/${S3_KEY}" $ENDPOINT_OPT $EXPIRE_OPT
+aws s3 cp /tmp/dump.sql.gz "s3://${S3_BUCKET}/${S3_KEY}" $ENDPOINT_OPT
 rm /tmp/dump.sql.gz

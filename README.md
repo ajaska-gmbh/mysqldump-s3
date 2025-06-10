@@ -22,9 +22,8 @@ docker run --rm \
   -e AWS_DEFAULT_REGION=your-aws-region \
   -e S3_BUCKET=your-s3-bucket \
   [-e S3_KEY=path/to/dump.sql.gz] \
-  [-e S3_EXPIRES=2023-01-01T00:00:00Z] \
-  [-e S3_EXPIRES_DAYS=7] \
   [-e S3_ENDPOINT_URL=https://s3.de.io.cloud.ovh.net] \
+  [-e RESTORE=true] \
   docker-mysqldump-s3
 ```
 
@@ -42,11 +41,12 @@ docker run --rm \
 | AWS_DEFAULT_REGION    | No       | AWS CLI default                  | AWS region                                             |
 | S3_BUCKET             | Yes      |                                  | S3 bucket name                                         |
 | S3_KEY                | No       | <db_name or all>-<timestamp>.sql.gz | S3 object key (path). A timestamp will always be appended to the key. |
-| S3_EXPIRES            | No       |                                  | ISO 8601 timestamp to set the `Expires` header on the S3 object (ignored if `S3_EXPIRES_DAYS` is set) |
-| S3_EXPIRES_DAYS       | No       |                                  | Number of days from now to set the `Expires` header on the S3 object (overrides `S3_EXPIRES`) |
 | S3_ENDPOINT_URL       | No       | AWS CLI default                  | Custom S3 endpoint URL (e.g. https://s3.de.io.cloud.ovh.net) |
+| RESTORE               | No       | false                            | When set to true, opens a shell in the container for restore operations |
 
 ## Listing and Restoring Backups
+
+### Using Helper Scripts
 
 Two helper scripts are provided in the `scripts/` directory to list existing backups in S3 and restore a selected backup into a MySQL database:
 
@@ -56,13 +56,57 @@ S3_BUCKET=your-s3-bucket AWS_ACCESS_KEY_ID=your-access-key-id AWS_SECRET_ACCESS_
   S3_ENDPOINT_URL=https://s3.de.io.cloud.ovh.net \
   sh scripts/list-backups.sh
 
-# Restore a specific backup
-S3_BUCKET=your-s3-bucket S3_KEY=path/to/backup.sql.gz \
+# Restore a backup interactively
+S3_BUCKET=your-s3-bucket \
   DB_HOST=your-db-host DB_PORT=3306 DB_USER=your-db-user DB_PASSWORD=your-db-password DB_NAME=your-db-name \
   AWS_ACCESS_KEY_ID=your-access-key-id AWS_SECRET_ACCESS_KEY=your-secret-access-key AWS_DEFAULT_REGION=your-aws-region \
   S3_ENDPOINT_URL=https://s3.de.io.cloud.ovh.net \
-  sh scripts/restore-backup.sh
+  bash scripts/restore-backup.sh
 ```
+
+The `restore-backup.sh` script provides a fully interactive experience:
+1. Lists all available backups in your S3 bucket
+2. Allows you to select which backup to restore
+3. Confirms before proceeding with the restoration
+4. Downloads the selected backup and restores it to your database
+5. Provides feedback throughout the process
+
+### Using Interactive Shell Mode
+
+You can also enter an interactive shell in the container to perform restore operations manually:
+
+```sh
+docker run -it --rm \
+  -e RESTORE=true \
+  -e AWS_ACCESS_KEY_ID=your-access-key-id \
+  -e AWS_SECRET_ACCESS_KEY=your-secret-access-key \
+  -e AWS_DEFAULT_REGION=your-aws-region \
+  -e S3_BUCKET=your-s3-bucket \
+  -e S3_ENDPOINT_URL=https://s3.de.io.cloud.ovh.net \
+  docker-mysqldump-s3
+```
+
+Once inside the container shell, you can follow these steps to restore a backup:
+
+1. List available backups:
+   ```
+   aws s3 ls "s3://$S3_BUCKET/" --recursive $ENDPOINT_OPT
+   ```
+
+2. Download a specific backup:
+   ```
+   aws s3 cp "s3://$S3_BUCKET/path/to/backup.sql.gz" /tmp/backup.sql.gz $ENDPOINT_OPT
+   ```
+
+3. Restore the backup to your database:
+   ```
+   gunzip -c /tmp/backup.sql.gz | mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME"
+   ```
+
+4. Exit the container when done:
+   ```
+   exit
+   ```
 
 ## Continuous Integration
 
