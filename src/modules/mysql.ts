@@ -1,10 +1,8 @@
-import { spawn, ChildProcess } from 'child_process';
-import { createConnection, Connection } from 'mysql2/promise';
+import { spawn } from 'child_process';
+import { createConnection } from 'mysql2/promise';
 import * as zlib from 'zlib';
 import * as fs from 'fs';
-import * as path from 'path';
 import { DatabaseConfig, ProgressCallback } from '../types';
-import { progressTracker } from './progress';
 
 export class MySQLManager {
   constructor(private config: DatabaseConfig) {}
@@ -32,8 +30,8 @@ export class MySQLManager {
 
     try {
       const [rows] = await connection.execute('SHOW DATABASES');
-      const databases = (rows as any[])
-        .map(row => row.Database)
+      const databases = (rows as { Database: string }[])
+        .map((row) => row.Database)
         .filter(db => !['information_schema', 'performance_schema', 'mysql', 'sys'].includes(db));
       
       return databases;
@@ -196,7 +194,7 @@ export class MySQLManager {
         'SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?',
         [databaseName]
       );
-      return (rows as any[]).length > 0;
+      return (rows as unknown[]).length > 0;
     } finally {
       await connection.end();
     }

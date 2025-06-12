@@ -47,7 +47,7 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
       }
 
       // Select backup
-      const backupChoices = backups.map((backup, index) => ({
+      const backupChoices = backups.map((backup) => ({
         name: `${backup.displayName} (${s3Manager.formatFileSize(backup.size)})`,
         value: backup.key,
         short: backup.displayName
@@ -69,7 +69,7 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
       console.log(chalk.blue('ℹ Fetching available databases...'));
       const databases = await mysqlManager.listDatabases();
 
-      let databaseChoices = databases.map(db => ({ name: db, value: db }));
+      const databaseChoices = databases.map(db => ({ name: db, value: db }));
       databaseChoices.push({ name: '[ Enter a different database name ]', value: 'custom' });
 
       const databaseAnswer = await inquirer.prompt([
@@ -200,11 +200,12 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
       }
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     progressTracker.stop();
-    console.error(chalk.red('✗ Restore failed:'), error.message);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(chalk.red('✗ Restore failed:'), errorMessage);
     
-    if (options.verbose && error.stack) {
+    if (options.verbose && error instanceof Error && error.stack) {
       console.error(chalk.gray(error.stack));
     }
     

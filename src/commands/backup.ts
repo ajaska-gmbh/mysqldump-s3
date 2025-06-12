@@ -87,11 +87,12 @@ export async function backupCommand(options: BackupOptions): Promise<void> {
       }
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     progressTracker.stop();
-    console.error(chalk.red('✗ Backup failed:'), error.message);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(chalk.red('✗ Backup failed:'), errorMessage);
     
-    if (options.verbose && error.stack) {
+    if (options.verbose && error instanceof Error && error.stack) {
       console.error(chalk.gray(error.stack));
     }
     

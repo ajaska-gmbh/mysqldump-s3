@@ -12,7 +12,7 @@ export class S3Manager {
   private s3Client: S3Client;
 
   constructor(private config: S3Config) {
-    const clientConfig: any = {
+    const clientConfig: Record<string, unknown> = {
       region: config.region || 'us-east-1',
       credentials: {
         accessKeyId: config.accessKeyId,
@@ -176,9 +176,15 @@ export class S3Manager {
       
       await this.s3Client.send(headCommand);
       return true;
-    } catch (error: any) {
-      if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'name' in error && error.name === 'NotFound') {
         return false;
+      }
+      if (error && typeof error === 'object' && '$metadata' in error) {
+        const metadata = error.$metadata as { httpStatusCode?: number };
+        if (metadata.httpStatusCode === 404) {
+          return false;
+        }
       }
       throw new Error(`Failed to check if backup exists: ${error}`);
     }

@@ -85,10 +85,11 @@ export async function listCommand(options: ListOptions): Promise<void> {
       }
     }
 
-  } catch (error: any) {
-    console.error(chalk.red('✗ Failed to list backups:'), error.message);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(chalk.red('✗ Failed to list backups:'), errorMessage);
     
-    if (options.verbose && error.stack) {
+    if (options.verbose && error instanceof Error && error.stack) {
       console.error(chalk.gray(error.stack));
     }
     
