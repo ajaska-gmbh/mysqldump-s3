@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import * as chalk from 'chalk';
+import chalk from 'chalk';
 import { backupCommand } from './commands/backup';
 import { listCommand } from './commands/list';
 import { restoreCommand } from './commands/restore';

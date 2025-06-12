@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import * as chalk from 'chalk';
+import chalk from 'chalk';
 import * as inquirer from 'inquirer';
 import { RestoreOptions } from '../types';
 import { ConfigManager } from '../modules/config';
@@ -167,7 +167,7 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
       // Download backup
       console.log(chalk.blue('ℹ Downloading backup from S3...'));
       const downloadProgress = progressTracker.createProgressBar('Downloading');
-      
+
       await s3Manager.downloadFile(selectedBackupKey, tempBackupPath, downloadProgress);
       progressTracker.stop();
       console.log(chalk.green('✓ Backup downloaded'));
@@ -175,7 +175,7 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
       // Restore backup
       console.log(chalk.blue('ℹ Restoring backup to database...'));
       const restoreProgress = progressTracker.createProgressBar('Restoring');
-      
+
       await mysqlManager.restoreBackup(tempBackupPath, targetDatabase, restoreProgress);
       progressTracker.stop();
       console.log(chalk.green('✓ Backup restored to database'));
@@ -204,11 +204,11 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
     progressTracker.stop();
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(chalk.red('✗ Restore failed:'), errorMessage);
-    
+
     if (options.verbose && error instanceof Error && error.stack) {
       console.error(chalk.gray(error.stack));
     }
-    
+
     process.exit(1);
   }
 }

@@ -1,5 +1,5 @@
 import * as cliProgress from 'cli-progress';
-import * as chalk from 'chalk';
+import chalk from 'chalk';
 import { ProgressCallback } from '../types';
 
 export class ProgressTracker {
@@ -23,7 +23,7 @@ export class ProgressTracker {
       this.totalValue = 100;
       this.progressBar.start(100, 0);
     }
-    
+
     this.currentValue = 0;
     this.isActive = true;
 
@@ -51,13 +51,13 @@ export class ProgressTracker {
         const sizeStr = this.formatBytes(progress.loaded);
         const totalStr = progress.total ? this.formatBytes(progress.total) : 'unknown';
         const percentage = progress.percentage || 0;
-        
+
         process.stdout.write(`\r${chalk.cyan(label)} ${sizeStr}/${totalStr} (${percentage.toFixed(1)}%)`);
-        
+
         if (progress.percentage === 100) {
           process.stdout.write('\n');
         }
-        
+
         lastUpdate = progress.loaded;
       }
     };
