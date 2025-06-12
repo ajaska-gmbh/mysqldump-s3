@@ -1,0 +1,19 @@
+{
+  "name": "docker-mysqldump-s3",
+  "version": "1.0.0",
+  "description": "Docker image to dump a MySQL database and upload it to Amazon S3.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ajaska-gmbh/docker-mysqldump-s3.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ajaska-gmbh/docker-mysqldump-s3/issues"
+  },
+  "homepage": "https://github.com/ajaska-gmbh/docker-mysqldump-s3#readme"
+}
