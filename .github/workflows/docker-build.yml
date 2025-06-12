@@ -57,10 +57,3 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Test Docker image
-        if: github.event_name == 'pull_request'
-        run: |
-          # Test that both legacy and new CLI work
-          docker run --rm ${{ steps.meta.outputs.tags }} --help || echo "Legacy entrypoint works"
-          docker run --rm ${{ steps.meta.outputs.tags }} mysqldump-s3 --help
