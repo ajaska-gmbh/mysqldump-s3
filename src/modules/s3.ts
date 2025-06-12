@@ -206,13 +206,13 @@ export class S3Manager {
 
   private extractDisplayName(key: string): string {
     // Extract meaningful name from S3 key
-    // e.g., "mydb-2023-12-01T10-30-00Z.sql.gz" -> "mydb (2023-12-01 10:30:00)"
+    // e.g., "mydb-2023-12-01T10-30-00-000Z.sql.gz" -> "mydb (2023-12-01 10:30:00)"
     const basename = key.split('/').pop() || key;
-    const match = basename.match(/^(.+)-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)\.sql\.gz$/);
+    const match = basename.match(/^(.+)-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)\.sql\.gz$/);
     
     if (match) {
       const [, dbName, timestamp] = match;
-      const date = timestamp.replace(/T(\d{2})-(\d{2})-(\d{2})Z/, ' $1:$2:$3');
+      const date = timestamp.replace(/T(\d{2})-(\d{2})-(\d{2})-\d{3}Z/, ' $1:$2:$3');
       return `${dbName} (${date})`;
     }
     

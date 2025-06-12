@@ -8,11 +8,14 @@ describe('ConfigManager', () => {
     configManager.reset();
     // Clear environment variables
     delete process.env.DB_HOST;
+    delete process.env.DB_PORT;
     delete process.env.DB_USER;
     delete process.env.DB_PASSWORD;
+    delete process.env.DB_NAME;
     delete process.env.S3_BUCKET;
     delete process.env.AWS_ACCESS_KEY_ID;
     delete process.env.AWS_SECRET_ACCESS_KEY;
+    delete process.env.AWS_DEFAULT_REGION;
   });
 
   describe('loadFromEnvironment', () => {
@@ -49,6 +52,8 @@ describe('ConfigManager', () => {
       process.env.AWS_ACCESS_KEY_ID = 'test-key-id';
       process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
       process.env.S3_BUCKET = 'test-bucket';
+      // Clear DB_PORT to test default
+      delete process.env.DB_PORT;
 
       const config = configManager.loadConfig();
 

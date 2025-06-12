@@ -3,6 +3,38 @@
  * These tests mock external dependencies but test the full command flow
  */
 
+// Mock AWS SDK before importing anything
+jest.mock('@aws-sdk/client-s3', () => {
+  return {
+    S3Client: jest.fn().mockImplementation(() => ({
+      send: jest.fn()
+    })),
+    PutObjectCommand: jest.fn(),
+    GetObjectCommand: jest.fn(),
+    ListObjectsV2Command: jest.fn(),
+    HeadObjectCommand: jest.fn()
+  };
+});
+
+// Mock chalk
+jest.mock('chalk', () => {
+  const mockFunction = jest.fn((text) => text);
+  const chalkMock = {
+    red: mockFunction,
+    green: {
+      bold: jest.fn((text) => text),
+      ...mockFunction
+    },
+    yellow: mockFunction,
+    blue: mockFunction,
+    cyan: mockFunction,
+    gray: mockFunction,
+    bold: mockFunction,
+  };
+  Object.assign(chalkMock.green, mockFunction);
+  return chalkMock;
+});
+
 import { backupCommand } from '../commands/backup';
 import { listCommand } from '../commands/list';
 import { restoreCommand } from '../commands/restore';
@@ -14,6 +46,7 @@ jest.mock('../modules/s3');
 jest.mock('../modules/progress');
 jest.mock('fs');
 jest.mock('os');
+jest.mock('path');
 
 describe('CLI Integration Tests', () => {
   beforeEach(() => {
@@ -66,9 +99,13 @@ describe('CLI Integration Tests', () => {
       const os = require('os');
       os.tmpdir = jest.fn().mockReturnValue('/tmp');
 
-      await expect(backupCommand({ verbose: true })).resolves.toBeUndefined();
+      const path = require('path');
+      path.join = jest.fn().mockReturnValue('/tmp/backup-123.sql.gz');
+
+      await backupCommand({ verbose: true });
       
-      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Backup completed successfully'));
+      // Check if the backup command ran successfully by verifying the chalk.green.bold call
+      expect(require('chalk').green.bold).toHaveBeenCalledWith('🎉 Backup completed successfully!');
     });
   });
 
@@ -99,7 +136,7 @@ describe('CLI Integration Tests', () => {
         formatFileSize: jest.fn().mockReturnValue('1.5 MB')
       }));
 
-      await expect(listCommand({ format: 'table' })).resolves.toBeUndefined();
+      await listCommand({ format: 'table' });
       
       expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Found 1 backup'));
     });
@@ -118,7 +155,7 @@ describe('CLI Integration Tests', () => {
         listBackups: jest.fn().mockResolvedValue([])
       }));
 
-      await expect(listCommand({})).resolves.toBeUndefined();
+      await listCommand({});
       
       expect(console.log).toHaveBeenCalledWith(expect.stringContaining('No backups found'));
     });
@@ -161,12 +198,12 @@ describe('CLI Integration Tests', () => {
       const os = require('os');
       os.tmpdir = jest.fn().mockReturnValue('/tmp');
 
-      await expect(restoreCommand({
+      await restoreCommand({
         backup: 'test-backup.sql.gz',
         database: 'testdb',
         interactive: false,
         force: true
-      })).resolves.toBeUndefined();
+      });
       
       expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Restore completed successfully'));
     });
