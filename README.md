@@ -58,7 +58,7 @@ S3_BUCKET=your-s3-bucket AWS_ACCESS_KEY_ID=your-access-key-id AWS_SECRET_ACCESS_
 
 # Restore a backup interactively
 S3_BUCKET=your-s3-bucket \
-  DB_HOST=your-db-host DB_PORT=3306 DB_USER=your-db-user DB_PASSWORD=your-db-password DB_NAME=your-db-name \
+  DB_HOST=your-db-host DB_PORT=3306 DB_USER=your-db-user DB_PASSWORD=your-db-password \
   AWS_ACCESS_KEY_ID=your-access-key-id AWS_SECRET_ACCESS_KEY=your-secret-access-key AWS_DEFAULT_REGION=your-aws-region \
   S3_ENDPOINT_URL=https://s3.de.io.cloud.ovh.net \
   bash scripts/restore-backup.sh

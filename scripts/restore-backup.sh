@@ -62,24 +62,54 @@ echo "You selected: $SELECTED_BACKUP"
 echo
 
 # Query available databases and let user select one
-if [ -z "${DB_NAME:-}" ]; then
-  echo "Fetching available databases from MySQL server..."
+echo "Fetching available databases from MySQL server..."
 
-  # Create a temporary container to query databases
-  DB_CONTAINER_ID=$(docker run -d \
-    -e DB_HOST -e DB_PORT -e DB_USER -e DB_PASSWORD \
-    --entrypoint /bin/bash \
-    docker-mysqldump-s3 \
-    -c "sleep 3600")
+# Create a temporary container to query databases
+DB_CONTAINER_ID=$(docker run -d \
+  -e DB_HOST -e DB_PORT -e DB_USER -e DB_PASSWORD \
+  --entrypoint /bin/bash \
+  docker-mysqldump-s3 \
+  -c "sleep 3600")
 
-  # Get list of databases
-  DATABASES=$(docker exec $DB_CONTAINER_ID bash -c "mysql -h \"$DB_HOST\" -P \"$DB_PORT\" -u \"$DB_USER\" -p\"$DB_PASSWORD\" -e 'SHOW DATABASES;' | grep -v 'Database' | grep -v 'information_schema' | grep -v 'performance_schema' | grep -v 'mysql' | grep -v 'sys'")
+# Get list of databases
+DATABASES=$(docker exec $DB_CONTAINER_ID bash -c "mysql -h \"$DB_HOST\" -P \"$DB_PORT\" -u \"$DB_USER\" -p\"$DB_PASSWORD\" -e 'SHOW DATABASES;' | grep -v 'Database' | grep -v 'information_schema' | grep -v 'performance_schema' | grep -v 'mysql' | grep -v 'sys'")
 
-  # Clean up temporary container
-  docker rm -f $DB_CONTAINER_ID > /dev/null
+# Clean up temporary container
+docker rm -f $DB_CONTAINER_ID > /dev/null
 
-  if [ -z "$DATABASES" ]; then
-    echo "No user databases found on the server."
+if [ -z "$DATABASES" ]; then
+  echo "No user databases found on the server."
+  echo "Enter the database name to restore to:"
+  read -r DB_NAME
+
+  if [ -z "$DB_NAME" ]; then
+    echo "Database name cannot be empty."
+    exit 1
+  fi
+else
+  # Convert to array
+  mapfile -t DB_ARRAY <<< "$DATABASES"
+  DB_COUNT=${#DB_ARRAY[@]}
+
+  echo "Found $DB_COUNT databases:"
+  echo
+
+  # Display databases with numbers
+  for i in "${!DB_ARRAY[@]}"; do
+    echo "$((i+1)). ${DB_ARRAY[$i]}"
+  done
+
+  echo
+  echo "Enter the number of the database you want to restore to (1-$DB_COUNT), or 0 to enter a different name:"
+  read -r DB_SELECTION
+
+  # Validate selection
+  if ! [[ "$DB_SELECTION" =~ ^[0-9]+$ ]] || [ "$DB_SELECTION" -lt 0 ] || [ "$DB_SELECTION" -gt "$DB_COUNT" ]; then
+    echo "Invalid selection. Please enter a number between 0 and $DB_COUNT."
+    exit 1
+  fi
+
+  if [ "$DB_SELECTION" -eq 0 ]; then
     echo "Enter the database name to restore to:"
     read -r DB_NAME
 
@@ -88,40 +118,8 @@ if [ -z "${DB_NAME:-}" ]; then
       exit 1
     fi
   else
-    # Convert to array
-    mapfile -t DB_ARRAY <<< "$DATABASES"
-    DB_COUNT=${#DB_ARRAY[@]}
-
-    echo "Found $DB_COUNT databases:"
-    echo
-
-    # Display databases with numbers
-    for i in "${!DB_ARRAY[@]}"; do
-      echo "$((i+1)). ${DB_ARRAY[$i]}"
-    done
-
-    echo
-    echo "Enter the number of the database you want to restore to (1-$DB_COUNT), or 0 to enter a different name:"
-    read -r DB_SELECTION
-
-    # Validate selection
-    if ! [[ "$DB_SELECTION" =~ ^[0-9]+$ ]] || [ "$DB_SELECTION" -lt 0 ] || [ "$DB_SELECTION" -gt "$DB_COUNT" ]; then
-      echo "Invalid selection. Please enter a number between 0 and $DB_COUNT."
-      exit 1
-    fi
-
-    if [ "$DB_SELECTION" -eq 0 ]; then
-      echo "Enter the database name to restore to:"
-      read -r DB_NAME
-
-      if [ -z "$DB_NAME" ]; then
-        echo "Database name cannot be empty."
-        exit 1
-      fi
-    else
-      # Get selected database
-      DB_NAME="${DB_ARRAY[$((DB_SELECTION-1))]}"
-    fi
+    # Get selected database
+    DB_NAME="${DB_ARRAY[$((DB_SELECTION-1))]}"
   fi
 fi
 
