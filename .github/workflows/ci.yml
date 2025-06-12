@@ -7,17 +7,18 @@ on:
   pull_request:
     branches:
       - main
+  workflow_call:
 
 jobs:
   test:
     name: Test on Node.js ${{ matrix.node-version }}
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
         node-version: [20]
       fail-fast: false
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
