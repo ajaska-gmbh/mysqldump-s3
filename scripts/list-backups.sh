@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -euo pipefail
 
 : "${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}"
@@ -10,8 +10,5 @@ if [ -n "${S3_ENDPOINT_URL:-}" ]; then
   ENDPOINT_OPT="--endpoint-url ${S3_ENDPOINT_URL}"
 fi
 
-docker run --rm \
-  -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
-  -e S3_BUCKET \
-  --entrypoint aws docker-mysqldump-s3 \
-  s3 ls "s3://${S3_BUCKET}/" --recursive $ENDPOINT_OPT
+# List backups directly using AWS CLI
+aws s3 ls "s3://${S3_BUCKET}/" --recursive $ENDPOINT_OPT

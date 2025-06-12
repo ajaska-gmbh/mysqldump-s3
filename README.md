@@ -50,6 +50,8 @@ docker run --rm \
 
 Two helper scripts are provided in the `scripts/` directory to list existing backups in S3 and restore a selected backup into a MySQL database:
 
+**Prerequisites:** The scripts require `aws` CLI and `mysql` client to be installed and available in your environment.
+
 ```sh
 # List all backups in the S3 bucket
 S3_BUCKET=your-s3-bucket AWS_ACCESS_KEY_ID=your-access-key-id AWS_SECRET_ACCESS_KEY=your-secret-access-key AWS_DEFAULT_REGION=your-aws-region \

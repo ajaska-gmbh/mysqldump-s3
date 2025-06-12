@@ -22,11 +22,7 @@ echo
 
 # List available backups
 echo "Fetching list of available backups..."
-BACKUPS=$(docker run --rm \
-  -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
-  -e S3_BUCKET \
-  --entrypoint aws docker-mysqldump-s3 \
-  s3 ls "s3://${S3_BUCKET}/" --recursive $ENDPOINT_OPT | awk '{print $4}')
+BACKUPS=$(aws s3 ls "s3://${S3_BUCKET}/" --recursive $ENDPOINT_OPT | awk '{print $4}')
 
 if [ -z "$BACKUPS" ]; then
   echo "No backups found in s3://${S3_BUCKET}/"
@@ -64,18 +60,8 @@ echo
 # Query available databases and let user select one
 echo "Fetching available databases from MySQL server..."
 
-# Create a temporary container to query databases
-DB_CONTAINER_ID=$(docker run -d \
-  -e DB_HOST -e DB_PORT -e DB_USER -e DB_PASSWORD \
-  --entrypoint /bin/bash \
-  docker-mysqldump-s3 \
-  -c "sleep 3600")
-
-# Get list of databases
-DATABASES=$(docker exec $DB_CONTAINER_ID bash -c "mysql -h \"$DB_HOST\" -P \"$DB_PORT\" -u \"$DB_USER\" -p\"$DB_PASSWORD\" -e 'SHOW DATABASES;' | grep -v 'Database' | grep -v 'information_schema' | grep -v 'performance_schema' | grep -v 'mysql' | grep -v 'sys'")
-
-# Clean up temporary container
-docker rm -f $DB_CONTAINER_ID > /dev/null
+# Get list of databases directly using mysql command
+DATABASES=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" -e 'SHOW DATABASES;' | grep -v 'Database' | grep -v 'information_schema' | grep -v 'performance_schema' | grep -v 'mysql' | grep -v 'sys')
 
 if [ -z "$DATABASES" ]; then
   echo "No user databases found on the server."
@@ -137,24 +123,20 @@ echo
 echo "Starting restoration process..."
 
 echo "1. Downloading backup from S3..."
-CONTAINER_ID=$(docker run -d \
-  -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
-  -e S3_BUCKET -e S3_ENDPOINT_URL \
-  -e DB_HOST -e DB_PORT -e DB_USER -e DB_PASSWORD -e DB_NAME \
-  --entrypoint /bin/bash \
-  docker-mysqldump-s3 \
-  -c "sleep 3600")
+# Create temporary directory for backup file
+TEMP_DIR=$(mktemp -d)
+BACKUP_FILE="$TEMP_DIR/backup.sql.gz"
 
-# Download the backup
-docker exec $CONTAINER_ID aws s3 cp "s3://${S3_BUCKET}/${SELECTED_BACKUP}" /tmp/backup.sql.gz $ENDPOINT_OPT
+# Download the backup directly using AWS CLI
+aws s3 cp "s3://${S3_BUCKET}/${SELECTED_BACKUP}" "$BACKUP_FILE" $ENDPOINT_OPT
 
 echo "2. Restoring backup to database..."
-# Restore the backup
-docker exec $CONTAINER_ID bash -c "gunzip -c /tmp/backup.sql.gz | mysql -h \"$DB_HOST\" -P \"$DB_PORT\" -u \"$DB_USER\" -p\"$DB_PASSWORD\" \"$DB_NAME\""
+# Restore the backup directly using gunzip and mysql
+gunzip -c "$BACKUP_FILE" | mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME"
 
 # Clean up
 echo "3. Cleaning up..."
-docker rm -f $CONTAINER_ID > /dev/null
+rm -rf "$TEMP_DIR"
 
 echo
 echo "Restoration completed successfully!"
