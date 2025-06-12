@@ -67,51 +67,7 @@ S3_BUCKET=your-s3-bucket \
 The `restore-backup.sh` script provides a fully interactive experience:
 1. Lists all available backups in your S3 bucket
 2. Allows you to select which backup to restore
-3. Confirms before proceeding with the restoration
-4. Downloads the selected backup and restores it to your database
-5. Provides feedback throughout the process
-
-### Using Interactive Shell Mode
-
-You can also enter an interactive shell in the container to perform restore operations manually:
-
-```sh
-docker run -it --rm \
-  -e RESTORE=true \
-  -e AWS_ACCESS_KEY_ID=your-access-key-id \
-  -e AWS_SECRET_ACCESS_KEY=your-secret-access-key \
-  -e AWS_DEFAULT_REGION=your-aws-region \
-  -e S3_BUCKET=your-s3-bucket \
-  -e S3_ENDPOINT_URL=https://s3.de.io.cloud.ovh.net \
-  docker-mysqldump-s3
-```
-
-Once inside the container shell, you can follow these steps to restore a backup:
-
-1. List available backups:
-   ```
-   aws s3 ls "s3://$S3_BUCKET/" --recursive $ENDPOINT_OPT
-   ```
-
-2. Download a specific backup:
-   ```
-   aws s3 cp "s3://$S3_BUCKET/path/to/backup.sql.gz" /tmp/backup.sql.gz $ENDPOINT_OPT
-   ```
-
-3. Restore the backup to your database:
-   ```
-   gunzip -c /tmp/backup.sql.gz | mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME"
-   ```
-
-4. Exit the container when done:
-   ```
-   exit
-   ```
-
-## Continuous Integration
-
-A GitHub Actions workflow is provided in `.github/workflows/docker-publish.yml` to build and push the Docker image to GitHub Container Registry on pushes to the `main` branch. The image is published as:
-
-```txt
-ghcr.io/ajaska-gmbh/docker-mysqldump-s3:latest
-```
+3. Queries MySQL for available databases and lets you select which one to restore to
+4. Confirms before proceeding with the restoration
+5. Downloads the selected backup and restores it to your selected database
+6. Provides feedback throughout the process

@@ -15,8 +15,14 @@ RUN apt-get update && \
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Create scripts directory
+RUN mkdir -p /scripts
+
 # Copy helper scripts
-COPY scripts/ /scripts/
+COPY /scripts/list-backups.sh /scripts/list-backups.sh
+COPY /scripts/list-backups.sh /scripts/restore-backup.sh
 RUN chmod +x /scripts/*.sh
+
+
 
 ENTRYPOINT ["/entrypoint.sh"]
