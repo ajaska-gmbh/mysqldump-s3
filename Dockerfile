@@ -26,12 +26,6 @@ RUN npm run build
 # Remove dev dependencies to reduce image size
 RUN npm prune --production
 
-# Create scripts directory and copy helper scripts
-RUN mkdir -p /scripts
-COPY scripts/list-backups.sh /scripts/list-backups.sh
-COPY scripts/restore-backup.sh /scripts/restore-backup.sh
-RUN chmod +x /scripts/*.sh
-
 # Make CLI globally available
 RUN npm link
 
