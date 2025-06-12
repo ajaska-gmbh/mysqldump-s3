@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 set -euo pipefail
 
 : "${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}"
