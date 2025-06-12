@@ -1,0 +1,14 @@
+{
+  "database": {
+    "host": "localhost",
+    "port": 3306,
+    "user": "root",
+    "password": "your-password"
+  },
+  "s3": {
+    "accessKeyId": "your-aws-access-key-id",
+    "secretAccessKey": "your-aws-secret-access-key",
+    "region": "us-east-1",
+    "bucket": "your-s3-bucket"
+  }
+}

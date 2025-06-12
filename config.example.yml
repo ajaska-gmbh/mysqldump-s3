@@ -1,0 +1,19 @@
+# Example configuration file for mysqldump-s3
+# You can use either JSON or YAML format
+
+database:
+  host: "localhost"
+  port: 3306
+  user: "root"
+  password: "your-password"
+  # database: "specific-database"  # Optional: leave empty to backup all databases
+
+s3:
+  accessKeyId: "your-aws-access-key-id"
+  secretAccessKey: "your-aws-secret-access-key"
+  region: "us-east-1"  # Optional: defaults to us-east-1
+  bucket: "your-s3-bucket"
+  # key: "custom-prefix"  # Optional: custom prefix for backup files
+  # endpointUrl: "https://s3.de.io.cloud.ovh.net"  # Optional: custom S3 endpoint
+
+# verbose: true  # Optional: enable verbose output
