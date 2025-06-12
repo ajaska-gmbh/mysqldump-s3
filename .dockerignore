@@ -1,0 +1,13 @@
+node_modules
+*.log
+.git
+.gitignore
+*.md
+.eslintrc.js
+jest.config.js
+.github
+tests
+coverage
+dist
+*.test.ts
+*.spec.ts

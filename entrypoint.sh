@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+# Check if the first argument is mysqldump-s3 (new CLI)
+if [ "$#" -gt 0 ] && [ "$1" = "mysqldump-s3" ]; then
+  # Execute the new CLI directly, passing all arguments
+  exec "$@"
+fi
+
 # If RESTORE is set to true, open a shell
 if [ "${RESTORE:-false}" = "true" ]; then
   echo "Opening a shell for restore operations..."

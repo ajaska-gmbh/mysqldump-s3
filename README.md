@@ -273,9 +273,50 @@ The tool provides comprehensive error handling with:
 - 🧹 **Automatic cleanup** on failures
 - 📝 **Detailed logging** with `--verbose` flag
 
-## Legacy Docker Support
+## Docker Automation
 
-The original Docker functionality is still available for backward compatibility. See the [Docker documentation](./DOCKER.md) for details.
+Both the modern CLI and legacy functionality are available as Docker images for automation:
+
+### Modern CLI (Recommended)
+```bash
+# Create automated backup
+docker run --rm \
+  -e DB_HOST=your-db-host \
+  -e DB_USER=your-db-user \
+  -e DB_PASSWORD=your-db-password \
+  -e S3_BUCKET=your-s3-bucket \
+  -e AWS_ACCESS_KEY_ID=your-key \
+  -e AWS_SECRET_ACCESS_KEY=your-secret \
+  -e AWS_DEFAULT_REGION=us-east-1 \
+  ghcr.io/ajaska-gmbh/docker-mysqldump-s3:latest \
+  mysqldump-s3 backup --verbose
+
+# List backups
+docker run --rm \
+  -e S3_BUCKET=your-s3-bucket \
+  -e AWS_ACCESS_KEY_ID=your-key \
+  -e AWS_SECRET_ACCESS_KEY=your-secret \
+  -e AWS_DEFAULT_REGION=us-east-1 \
+  ghcr.io/ajaska-gmbh/docker-mysqldump-s3:latest \
+  mysqldump-s3 list --format table
+```
+
+### Legacy Compatibility
+The original Docker functionality is still available for backward compatibility:
+
+```bash
+docker run --rm \
+  -e DB_HOST=your-db-host \
+  -e DB_USER=your-db-user \
+  -e DB_PASSWORD=your-db-password \
+  -e S3_BUCKET=your-s3-bucket \
+  -e AWS_ACCESS_KEY_ID=your-key \
+  -e AWS_SECRET_ACCESS_KEY=your-secret \
+  -e AWS_DEFAULT_REGION=us-east-1 \
+  ghcr.io/ajaska-gmbh/docker-mysqldump-s3:latest
+```
+
+See the [Docker documentation](./DOCKER.md) for comprehensive usage examples, CI/CD integration, and Docker Compose configurations.
 
 ## License
 

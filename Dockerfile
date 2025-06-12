@@ -1,28 +1,44 @@
-FROM ubuntu:22.04
+FROM node:18-alpine
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      mysql-client \
-      python3 \
-      python3-pip \
-      ca-certificates \
-      bash && \
-    pip3 install --no-cache-dir awscli && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Install required system packages
+RUN apk add --no-cache \
+    mysql-client \
+    bash \
+    aws-cli \
+    ca-certificates
 
-# Copy entrypoint script
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev dependencies for building)
+RUN npm install
+
+# Copy TypeScript configuration and source
+COPY tsconfig.json ./
+COPY src/ ./src/
+
+# Build the TypeScript project
+RUN npm run build
+
+# Remove dev dependencies to reduce image size
+RUN npm prune --production
+
+# Copy legacy scripts and entrypoint
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Create scripts directory
+# Create scripts directory and copy helper scripts
 RUN mkdir -p /scripts
-
-# Copy helper scripts
-COPY /scripts/list-backups.sh /scripts/list-backups.sh
-COPY /scripts/list-backups.sh /scripts/restore-backup.sh
+COPY scripts/list-backups.sh /scripts/list-backups.sh
+COPY scripts/restore-backup.sh /scripts/restore-backup.sh
 RUN chmod +x /scripts/*.sh
 
+# Make CLI globally available
+RUN npm link
 
-
+# Default to legacy entrypoint for backward compatibility
+# Users can override this to use the new CLI directly
 ENTRYPOINT ["/entrypoint.sh"]
