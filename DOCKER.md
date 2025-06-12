@@ -8,9 +8,7 @@ This document describes how to use the Docker image for automation, supporting b
 docker build -t docker-mysqldump-s3 .
 ```
 
-## New CLI Usage (Recommended)
-
-The Docker image includes the new `mysqldump-s3` CLI with enhanced features:
+## CLI Usage (Recommended)
 
 ### Backup
 ```sh
@@ -55,22 +53,6 @@ docker run --rm \
 
 The original bash-based automation is still supported:
 
-```sh
-docker run --rm \
-  -e DB_HOST=your-db-host \
-  -e DB_PORT=3306 \
-  -e DB_USER=your-db-user \
-  -e DB_PASSWORD=your-db-password \
-  [-e DB_NAME=your-db-name] \
-  -e AWS_ACCESS_KEY_ID=your-access-key-id \
-  -e AWS_SECRET_ACCESS_KEY=your-secret-access-key \
-  -e AWS_DEFAULT_REGION=your-aws-region \
-  -e S3_BUCKET=your-s3-bucket \
-  [-e S3_KEY=path/to/dump.sql.gz] \
-  [-e S3_ENDPOINT_URL=https://s3.de.io.cloud.ovh.net] \
-  [-e RESTORE=true] \
-  docker-mysqldump-s3
-```
 
 ## Environment Variables
 
@@ -144,43 +126,3 @@ services:
       MYSQL_ROOT_PASSWORD: password
       MYSQL_DATABASE: myapp
 ```
-
-## Listing and Restoring Backups
-
-### Using Helper Scripts (Legacy)
-
-Two helper scripts are provided in the `scripts/` directory to list existing backups in S3 and restore a selected backup into a MySQL database:
-
-**Prerequisites:** The scripts require `aws` CLI and `mysql` client to be installed and available in your environment.
-
-```sh
-# List all backups in the S3 bucket
-S3_BUCKET=your-s3-bucket AWS_ACCESS_KEY_ID=your-access-key-id AWS_SECRET_ACCESS_KEY=your-secret-access-key AWS_DEFAULT_REGION=your-aws-region \
-  S3_ENDPOINT_URL=https://s3.de.io.cloud.ovh.net \
-  sh scripts/list-backups.sh
-
-# Restore a backup interactively
-S3_BUCKET=your-s3-bucket \
-  DB_HOST=your-db-host DB_PORT=3306 DB_USER=your-db-user DB_PASSWORD=your-db-password \
-  AWS_ACCESS_KEY_ID=your-access-key-id AWS_SECRET_ACCESS_KEY=your-secret-access-key AWS_DEFAULT_REGION=your-aws-region \
-  S3_ENDPOINT_URL=https://s3.de.io.cloud.ovh.net \
-  bash scripts/restore-backup.sh
-```
-
-The `restore-backup.sh` script provides a fully interactive experience:
-1. Lists all available backups in your S3 bucket
-2. Allows you to select which backup to restore
-3. Queries MySQL for available databases and lets you select which one to restore to
-4. Confirms before proceeding with the restoration
-5. Downloads the selected backup and restores it to your selected database
-6. Provides feedback throughout the process
-
-## Migration to CLI
-
-For new projects, we recommend using the new Node.js CLI version which provides:
-- Better error handling and progress tracking
-- More flexible configuration options
-- Interactive restore mode
-- Better testing and maintainability
-
-See the main [README.md](./README.md) for CLI usage instructions.

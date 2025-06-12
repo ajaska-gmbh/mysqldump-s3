@@ -250,19 +250,6 @@ npm run test:coverage
 npm run lint
 npm run lint:fix
 ```
-
-## Migration from Docker Version
-
-If you're migrating from the original Docker-based version:
-
-1. **Environment Variables**: All existing environment variables are supported
-2. **Functionality**: All original features are preserved and enhanced
-3. **Backup Format**: Compatible with existing backup files
-4. **Commands**: 
-   - Docker backup → `mysqldump-s3 backup`
-   - `scripts/list-backups.sh` → `mysqldump-s3 list`
-   - `scripts/restore-backup.sh` → `mysqldump-s3 restore`
-
 ## Error Handling
 
 The tool provides comprehensive error handling with:
@@ -272,10 +259,8 @@ The tool provides comprehensive error handling with:
 - 📊 **Progress indication** with error recovery
 - 🧹 **Automatic cleanup** on failures
 - 📝 **Detailed logging** with `--verbose` flag
-
-## Docker Automation
-
-Both the modern CLI and legacy functionality are available as Docker images for automation:
+- 
+## Docker Usage
 
 ### Modern CLI (Recommended)
 ```bash
@@ -301,26 +286,8 @@ docker run --rm \
   mysqldump-s3 list --format table
 ```
 
-### Legacy Compatibility
-The original Docker functionality is still available for backward compatibility:
-
-```bash
-docker run --rm \
-  -e DB_HOST=your-db-host \
-  -e DB_USER=your-db-user \
-  -e DB_PASSWORD=your-db-password \
-  -e S3_BUCKET=your-s3-bucket \
-  -e AWS_ACCESS_KEY_ID=your-key \
-  -e AWS_SECRET_ACCESS_KEY=your-secret \
-  -e AWS_DEFAULT_REGION=us-east-1 \
-  ghcr.io/ajaska-gmbh/docker-mysqldump-s3:latest
-```
 
 See the [Docker documentation](./DOCKER.md) for comprehensive usage examples, CI/CD integration, and Docker Compose configurations.
-
-## License
-
-ISC
 
 ## Contributing
 

@@ -26,10 +26,6 @@ RUN npm run build
 # Remove dev dependencies to reduce image size
 RUN npm prune --production
 
-# Copy legacy scripts and entrypoint
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
 # Create scripts directory and copy helper scripts
 RUN mkdir -p /scripts
 COPY scripts/list-backups.sh /scripts/list-backups.sh
