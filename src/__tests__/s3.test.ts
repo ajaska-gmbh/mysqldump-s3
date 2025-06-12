@@ -11,8 +11,17 @@ jest.mock('@aws-sdk/client-s3', () => ({
   HeadObjectCommand: jest.fn()
 }));
 
+// Mock fs
+jest.mock('fs', () => ({
+  existsSync: jest.fn(),
+  statSync: jest.fn(),
+  createReadStream: jest.fn(),
+  createWriteStream: jest.fn()
+}));
+
 describe('S3Manager', () => {
   let s3Manager: S3Manager;
+  let mockS3Client: any;
   const mockConfig = {
     accessKeyId: 'test-key',
     secretAccessKey: 'test-secret',
@@ -21,7 +30,219 @@ describe('S3Manager', () => {
   };
 
   beforeEach(() => {
+    jest.clearAllMocks();
+    
+    const { S3Client } = require('@aws-sdk/client-s3');
+    mockS3Client = {
+      send: jest.fn()
+    };
+    S3Client.mockImplementation(() => mockS3Client);
+    
     s3Manager = new S3Manager(mockConfig);
+  });
+
+  describe('constructor', () => {
+    it('should create S3 client with proper configuration', () => {
+      expect(require('@aws-sdk/client-s3').S3Client).toHaveBeenCalledWith({
+        region: 'us-east-1',
+        credentials: {
+          accessKeyId: 'test-key',
+          secretAccessKey: 'test-secret'
+        }
+      });
+    });
+
+    it('should configure custom endpoint if provided', () => {
+      const configWithEndpoint = {
+        ...mockConfig,
+        endpointUrl: 'https://custom-s3.example.com'
+      };
+      
+      new S3Manager(configWithEndpoint);
+
+      expect(require('@aws-sdk/client-s3').S3Client).toHaveBeenCalledWith({
+        region: 'us-east-1',
+        credentials: {
+          accessKeyId: 'test-key',
+          secretAccessKey: 'test-secret'
+        },
+        endpoint: 'https://custom-s3.example.com',
+        forcePathStyle: true
+      });
+    });
+  });
+
+  describe('uploadFile', () => {
+    it('should upload file successfully', async () => {
+      const fs = require('fs');
+      const mockReadStream = {
+        on: jest.fn((event, callback) => {
+          if (event === 'data') {
+            setTimeout(() => callback(Buffer.alloc(1024)), 10);
+          }
+        }),
+        pipe: jest.fn()
+      };
+
+      fs.existsSync.mockReturnValue(true);
+      fs.statSync.mockReturnValue({ size: 1024 });
+      fs.createReadStream.mockReturnValue(mockReadStream);
+      mockS3Client.send.mockResolvedValue({});
+
+      const progressCallback = jest.fn();
+
+      await s3Manager.uploadFile('/path/to/file.sql.gz', 'backup.sql.gz', progressCallback);
+
+      expect(mockS3Client.send).toHaveBeenCalled();
+      expect(fs.existsSync).toHaveBeenCalledWith('/path/to/file.sql.gz');
+    });
+
+    it('should throw error if file does not exist', async () => {
+      const fs = require('fs');
+      fs.existsSync.mockReturnValue(false);
+
+      await expect(s3Manager.uploadFile('/nonexistent/file.sql.gz', 'backup.sql.gz'))
+        .rejects.toThrow('File not found: /nonexistent/file.sql.gz');
+    });
+
+    it('should handle upload errors', async () => {
+      const fs = require('fs');
+      const mockReadStream = {
+        on: jest.fn(),
+        pipe: jest.fn()
+      };
+
+      fs.existsSync.mockReturnValue(true);
+      fs.statSync.mockReturnValue({ size: 1024 });
+      fs.createReadStream.mockReturnValue(mockReadStream);
+      mockS3Client.send.mockRejectedValue(new Error('Upload failed'));
+
+      await expect(s3Manager.uploadFile('/path/to/file.sql.gz', 'backup.sql.gz'))
+        .rejects.toThrow('Failed to upload to S3: Error: Upload failed');
+    });
+  });
+
+  describe('downloadFile', () => {
+    it('should download file successfully', async () => {
+      const mockWriteStream = {
+        on: jest.fn()
+      };
+      const mockReadableStream = {
+        on: jest.fn((event, callback) => {
+          if (event === 'data') {
+            setTimeout(() => callback(Buffer.alloc(512)), 10);
+          } else if (event === 'end') {
+            setTimeout(() => callback(), 20);
+          }
+        }),
+        pipe: jest.fn()
+      };
+
+      mockS3Client.send
+        .mockResolvedValueOnce({ ContentLength: 1024 }) // HEAD request
+        .mockResolvedValueOnce({ Body: mockReadableStream }); // GET request
+
+      const fs = require('fs');
+      fs.createWriteStream.mockReturnValue(mockWriteStream);
+
+      const progressCallback = jest.fn();
+
+      await s3Manager.downloadFile('backup.sql.gz', '/tmp/backup.sql.gz', progressCallback);
+
+      expect(mockS3Client.send).toHaveBeenCalledTimes(2);
+    });
+
+    it('should handle download errors', async () => {
+      mockS3Client.send.mockRejectedValue(new Error('Download failed'));
+
+      await expect(s3Manager.downloadFile('backup.sql.gz', '/tmp/backup.sql.gz'))
+        .rejects.toThrow('Failed to download from S3: Error: Download failed');
+    });
+  });
+
+  describe('listBackups', () => {
+    it('should list backups successfully', async () => {
+      const mockResponse = {
+        Contents: [
+          {
+            Key: 'mydb-2023-12-01T10-30-00-000Z.sql.gz',
+            LastModified: new Date('2023-12-01T10:30:00Z'),
+            Size: 1572864
+          },
+          {
+            Key: 'otherdb-2023-12-02T11-30-00-000Z.sql.gz',
+            LastModified: new Date('2023-12-02T11:30:00Z'),
+            Size: 2097152
+          },
+          {
+            Key: 'notabackup.txt',
+            LastModified: new Date('2023-12-01T10:30:00Z'),
+            Size: 100
+          }
+        ]
+      };
+
+      mockS3Client.send.mockResolvedValue(mockResponse);
+
+      const backups = await s3Manager.listBackups();
+
+      expect(backups).toHaveLength(2); // Should exclude non-.sql.gz files
+      expect(backups[0].key).toBe('otherdb-2023-12-02T11-30-00-000Z.sql.gz'); // Should be sorted by date desc
+      expect(backups[1].key).toBe('mydb-2023-12-01T10-30-00-000Z.sql.gz');
+    });
+
+    it('should handle empty bucket', async () => {
+      mockS3Client.send.mockResolvedValue({ Contents: [] });
+
+      const backups = await s3Manager.listBackups();
+
+      expect(backups).toEqual([]);
+    });
+
+    it('should handle list errors', async () => {
+      mockS3Client.send.mockRejectedValue(new Error('List failed'));
+
+      await expect(s3Manager.listBackups())
+        .rejects.toThrow('Failed to list backups from S3: Error: List failed');
+    });
+  });
+
+  describe('backupExists', () => {
+    it('should return true if backup exists', async () => {
+      mockS3Client.send.mockResolvedValue({});
+
+      const exists = await s3Manager.backupExists('backup.sql.gz');
+
+      expect(exists).toBe(true);
+    });
+
+    it('should return false if backup does not exist', async () => {
+      const error = new Error('Not found');
+      error.name = 'NotFound';
+      mockS3Client.send.mockRejectedValue(error);
+
+      const exists = await s3Manager.backupExists('nonexistent.sql.gz');
+
+      expect(exists).toBe(false);
+    });
+
+    it('should return false for 404 status code', async () => {
+      const error = new Error('Not found');
+      (error as any).$metadata = { httpStatusCode: 404 };
+      mockS3Client.send.mockRejectedValue(error);
+
+      const exists = await s3Manager.backupExists('nonexistent.sql.gz');
+
+      expect(exists).toBe(false);
+    });
+
+    it('should rethrow other errors', async () => {
+      const error = new Error('Access denied');
+      mockS3Client.send.mockRejectedValue(error);
+
+      await expect(s3Manager.backupExists('backup.sql.gz'))
+        .rejects.toThrow('Failed to check if backup exists: Error: Access denied');
+    });
   });
 
   describe('extractDisplayName', () => {
