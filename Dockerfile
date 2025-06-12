@@ -20,7 +20,7 @@ RUN mkdir -p /scripts
 
 # Copy helper scripts
 COPY /scripts/list-backups.sh /scripts/list-backups.sh
-COPY /scripts/list-backups.sh /scripts/restore-backup.sh
+COPY /scripts/restore-backup.sh /scripts/restore-backup.sh
 RUN chmod +x /scripts/*.sh
 
 
