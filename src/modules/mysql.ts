@@ -15,7 +15,7 @@ export class MySQLManager {
       password: this.config.password,
       database: this.config.database
     });
-    
+
     await connection.ping();
     await connection.end();
   }
@@ -33,7 +33,7 @@ export class MySQLManager {
       const databases = (rows as { Database: string }[])
         .map((row) => row.Database)
         .filter(db => !['information_schema', 'performance_schema', 'mysql', 'sys'].includes(db));
-      
+
       return databases;
     } finally {
       await connection.end();
@@ -177,7 +177,14 @@ export class MySQLManager {
         if (code !== 0) {
           handleError(new Error(`mysql exited with code ${code}: ${error}`), 'MySQL process failed');
         } else {
-          handleSuccess();
+          // Ensure all streams are properly closed before resolving
+          input.destroy();
+          gunzip.destroy();
+
+          // Small delay to ensure all resources are properly released
+          setTimeout(() => {
+            handleSuccess();
+          }, 100);
         }
       });
 
@@ -205,14 +212,14 @@ export class MySQLManager {
 
       // Handle pipe errors in the stream pipeline
       const pipeline = input.pipe(gunzip);
-      
+
       pipeline.on('error', (err) => {
         handleError(err, 'Pipeline error');
       });
 
       // Set up the final pipe to mysql with error handling
       pipeline.pipe(mysql.stdin, { end: true });
-      
+
       // Handle backpressure by pausing/resuming the input stream
       mysql.stdin.on('drain', () => {
         input.resume();
