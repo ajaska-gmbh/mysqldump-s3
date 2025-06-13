@@ -132,6 +132,24 @@ export class MySQLManager {
 
       const input = fs.createReadStream(backupPath);
       let error = '';
+      let isResolved = false;
+
+      const handleError = (err: Error, source: string) => {
+        if (!isResolved) {
+          isResolved = true;
+          reject(new Error(`${source}: ${err.message}`));
+        }
+      };
+
+      const handleSuccess = () => {
+        if (!isResolved) {
+          isResolved = true;
+          if (progressCallback) {
+            progressCallback({ loaded: totalSize, total: totalSize, percentage: 100 });
+          }
+          resolve();
+        }
+      };
 
       // Track progress if callback provided
       if (progressCallback) {
@@ -146,38 +164,63 @@ export class MySQLManager {
         });
       }
 
-      // Handle mysql errors
+      // Handle mysql process errors
       mysql.stderr.on('data', (data) => {
         error += data.toString();
       });
 
       mysql.on('error', (err) => {
-        reject(new Error(`Failed to start mysql: ${err.message}`));
+        handleError(err, 'Failed to start mysql');
       });
 
       mysql.on('close', (code) => {
         if (code !== 0) {
-          reject(new Error(`mysql exited with code ${code}: ${error}`));
+          handleError(new Error(`mysql exited with code ${code}: ${error}`), 'MySQL process failed');
         } else {
-          if (progressCallback) {
-            progressCallback({ loaded: totalSize, total: totalSize, percentage: 100 });
-          }
-          resolve();
+          handleSuccess();
         }
+      });
+
+      // Handle mysql stdin pipe errors (EPIPE protection)
+      mysql.stdin.on('error', (err: Error & { code?: string }) => {
+        // EPIPE error typically means the mysql process has closed
+        // Check if it's an expected closure or an error
+        if (err.code === 'EPIPE') {
+          // Don't immediately reject, wait for mysql process to close
+          // The mysql 'close' event will handle the final resolution
+          return;
+        }
+        handleError(err, 'MySQL stdin pipe error');
       });
 
       // Handle gunzip errors
       gunzip.on('error', (err) => {
-        reject(new Error(`Decompression failed: ${err.message}`));
+        handleError(err, 'Decompression failed');
       });
 
       // Handle input file errors
       input.on('error', (err) => {
-        reject(new Error(`Failed to read backup file: ${err.message}`));
+        handleError(err, 'Failed to read backup file');
       });
 
-      // Pipe data through decompression to mysql
-      input.pipe(gunzip).pipe(mysql.stdin);
+      // Handle pipe errors in the stream pipeline
+      const pipeline = input.pipe(gunzip);
+      
+      pipeline.on('error', (err) => {
+        handleError(err, 'Pipeline error');
+      });
+
+      // Set up the final pipe to mysql with error handling
+      pipeline.pipe(mysql.stdin, { end: true });
+      
+      // Handle backpressure by pausing/resuming the input stream
+      mysql.stdin.on('drain', () => {
+        input.resume();
+      });
+
+      if (mysql.stdin.writableHighWaterMark && mysql.stdin.writableLength > mysql.stdin.writableHighWaterMark) {
+        input.pause();
+      }
     });
   }
 
