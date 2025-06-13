@@ -50,5 +50,5 @@ export interface RestoreOptions {
 }
 
 export interface ProgressCallback {
-  (progress: { loaded: number; total?: number; percentage?: number }): void;
+  (progress: { loaded?: number; total?: number; percentage?: number }): void;
 }

@@ -7,13 +7,20 @@ export class ProgressTracker {
   private isActive = false;
   private currentValue = 0;
   private totalValue = 0;
+  private lastUpdateTime = 0;
+  private lastUpdateValue = 0;
+  private progressRates: number[] = [];
+  private readonly maxRateHistory = 10;
+  private readonly minUpdateInterval = 500; // milliseconds
 
   public createProgressBar(label: string, total?: number): ProgressCallback {
     this.progressBar = new cliProgress.SingleBar({
       format: `${chalk.cyan(label)} |{bar}| {percentage}% | {value}/{total} | ETA: {eta}s`,
       barCompleteChar: '\u2588',
       barIncompleteChar: '\u2591',
-      hideCursor: true
+      hideCursor: true,
+      etaBuffer: this.maxRateHistory,
+      etaAsynchronousUpdate: true
     });
 
     if (total) {
@@ -26,19 +33,57 @@ export class ProgressTracker {
 
     this.currentValue = 0;
     this.isActive = true;
+    this.lastUpdateTime = Date.now();
+    this.lastUpdateValue = 0;
+    this.progressRates = [];
 
     return (progress) => {
       if (!this.progressBar || !this.isActive) return;
 
-      if (total && progress.total) {
-        this.totalValue = progress.total;
-        this.progressBar.setTotal(progress.total);
-        this.currentValue = progress.loaded;
-        this.progressBar.update(progress.loaded);
-      } else if (progress.percentage !== undefined) {
-        this.currentValue = progress.percentage;
-        this.progressBar.update(progress.percentage);
+      const now = Date.now();
+      const timeSinceLastUpdate = now - this.lastUpdateTime;
+
+      // Throttle updates to prevent too frequent changes
+      if (timeSinceLastUpdate < this.minUpdateInterval && progress.percentage !== 100) {
+        return;
       }
+
+      let newValue: number;
+      let newTotal: number = this.totalValue;
+
+      if (progress.total !== undefined && progress.loaded !== undefined) {
+        newTotal = progress.total;
+        newValue = progress.loaded;
+        if (newTotal !== this.totalValue) {
+          this.totalValue = newTotal;
+          this.progressBar.setTotal(newTotal);
+        }
+      } else if (progress.percentage !== undefined) {
+        newValue = progress.percentage;
+        newTotal = this.totalValue; // Keep existing total
+      } else {
+        return;
+      }
+
+      // Calculate and smooth the progress rate
+      if (this.lastUpdateTime > 0 && timeSinceLastUpdate > 0) {
+        const valueChange = newValue - this.lastUpdateValue;
+        const rate = valueChange / (timeSinceLastUpdate / 1000); // units per second
+        
+        if (rate > 0) {
+          this.progressRates.push(rate);
+          if (this.progressRates.length > this.maxRateHistory) {
+            this.progressRates.shift();
+          }
+        }
+      }
+
+      this.currentValue = newValue;
+      this.lastUpdateTime = now;
+      this.lastUpdateValue = newValue;
+
+      // Update the progress bar
+      this.progressBar.update(newValue);
     };
   }
 
@@ -47,8 +92,9 @@ export class ProgressTracker {
     const updateThreshold = 1024 * 1024; // Update every 1MB
 
     return (progress) => {
-      if (progress.loaded - lastUpdate >= updateThreshold || progress.percentage === 100) {
-        const sizeStr = this.formatBytes(progress.loaded);
+      const loaded = progress.loaded || 0;
+      if (loaded - lastUpdate >= updateThreshold || progress.percentage === 100) {
+        const sizeStr = this.formatBytes(loaded);
         const totalStr = progress.total ? this.formatBytes(progress.total) : 'unknown';
         const percentage = progress.percentage || 0;
 
@@ -58,7 +104,7 @@ export class ProgressTracker {
           process.stdout.write('\n');
         }
 
-        lastUpdate = progress.loaded;
+        lastUpdate = loaded;
       }
     };
   }
@@ -67,6 +113,9 @@ export class ProgressTracker {
     if (this.progressBar && this.isActive) {
       this.progressBar.stop();
       this.isActive = false;
+      this.progressRates = [];
+      this.lastUpdateTime = 0;
+      this.lastUpdateValue = 0;
     }
   }
 

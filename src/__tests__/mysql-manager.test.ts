@@ -12,13 +12,16 @@ jest.mock('child_process', () => ({
 
 // Mock zlib
 jest.mock('zlib', () => ({
-  createGzip: jest.fn()
+  createGzip: jest.fn(),
+  createGunzip: jest.fn()
 }));
 
 // Mock fs
 jest.mock('fs', () => ({
   createWriteStream: jest.fn(),
-  createReadStream: jest.fn()
+  createReadStream: jest.fn(),
+  existsSync: jest.fn(),
+  statSync: jest.fn()
 }));
 
 describe('MySQLManager', () => {
@@ -171,6 +174,55 @@ describe('MySQLManager', () => {
       expect(() => {
         mysqlManager.createBackup('/tmp/backup.sql.gz');
       }).not.toThrow();
+    });
+  });
+
+  describe('restoreBackup', () => {
+    it('should handle EPIPE error gracefully', () => {
+      const mockMysqlProcess = {
+        stdin: {
+          on: jest.fn(),
+          writableHighWaterMark: 1024,
+          writableLength: 0
+        },
+        stderr: {
+          on: jest.fn()
+        },
+        on: jest.fn()
+      };
+
+      const mockGunzip = {
+        on: jest.fn()
+      };
+
+      const mockReadStream = {
+        on: jest.fn(),
+        pipe: jest.fn().mockReturnThis()
+      };
+
+      const { spawn } = require('child_process');
+      const zlib = require('zlib');
+      const fs = require('fs');
+
+      spawn.mockReturnValue(mockMysqlProcess);
+      zlib.createGunzip.mockReturnValue(mockGunzip);
+      fs.createReadStream.mockReturnValue(mockReadStream);
+      fs.existsSync.mockReturnValue(true);
+      fs.statSync.mockReturnValue({ size: 1024 });
+
+      // Call restoreBackup but don't wait for completion
+      mysqlManager.restoreBackup('/tmp/backup.sql.gz', 'testdb');
+
+      // Verify that EPIPE error handler is set up
+      expect(mockMysqlProcess.stdin.on).toHaveBeenCalledWith('error', expect.any(Function));
+      
+      // Simulate EPIPE error
+      const errorHandler = mockMysqlProcess.stdin.on.mock.calls.find(call => call[0] === 'error')[1];
+      const epipeError = new Error('EPIPE') as Error & { code?: string };
+      epipeError.code = 'EPIPE';
+      
+      // Should not throw when EPIPE error occurs
+      expect(() => errorHandler(epipeError)).not.toThrow();
     });
   });
 
