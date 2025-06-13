@@ -1,11 +1,13 @@
-FROM node:18-alpine
+FROM node:18-slim
 
 # Install required system packages
-RUN apk add --no-cache \
-    mysql-client \
-    bash \
-    aws-cli \
-    ca-certificates
+RUN apt-get update && apt-get install -y \
+    default-mysql-client \
+    awscli \
+    ca-certificates \
+    --no-install-recommends && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
@@ -13,22 +15,15 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies (including dev dependencies for building)
 RUN npm install
 
-# Copy TypeScript configuration and source
 COPY tsconfig.json ./
 COPY src/ ./src/
 
-# Build the TypeScript project
 RUN npm run build
 
-# Remove dev dependencies to reduce image size
 RUN npm prune --production
 
-# Make CLI globally available
 RUN npm link
 
-# Default to legacy entrypoint for backward compatibility
-# Users can override this to use the new CLI directly
 ENTRYPOINT ["/entrypoint.sh"]
