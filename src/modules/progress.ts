@@ -15,7 +15,10 @@ export class ProgressTracker {
 
   public createProgressBar(label: string, total?: number): ProgressCallback {
     this.progressBar = new cliProgress.SingleBar({
-      format: (options, params, payload) => {
+      format: (options, params) => {
+        // Using 'any' type assertion because the cli-progress library's type definitions
+        // don't include all the properties that are actually available at runtime
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const p = params as any;
         const etaStr = p.eta !== null && p.percentage < 100 
           ? `ETA: ${p.eta}s` 

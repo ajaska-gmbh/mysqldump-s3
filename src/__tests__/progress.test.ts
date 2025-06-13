@@ -31,9 +31,9 @@ describe('ProgressTracker', () => {
       setTotal: jest.fn()
     };
     cliProgress.SingleBar.mockImplementation(() => mockProgressBar);
-    
+
     progressTracker = new ProgressTracker();
-    
+
     // Mock console.log
     jest.spyOn(console, 'log').mockImplementation();
   });
@@ -59,7 +59,7 @@ describe('ProgressTracker', () => {
 
     it('should handle progress updates with total', () => {
       const callback = progressTracker.createProgressBar('Test', 50);
-      
+
       // Test with 100% completion to bypass throttling
       callback({ loaded: 200, total: 200, percentage: 100 });
 
@@ -69,7 +69,7 @@ describe('ProgressTracker', () => {
 
     it('should handle progress updates with percentage only', () => {
       const callback = progressTracker.createProgressBar('Test');
-      
+
       // Test with percentage only (no total or loaded properties)
       callback({ percentage: 100 });
 
@@ -78,10 +78,10 @@ describe('ProgressTracker', () => {
 
     it('should throttle progress updates', () => {
       const callback = progressTracker.createProgressBar('Test', 100);
-      
+
       // First call should work (initial update)
       callback({ loaded: 25, total: 100, percentage: 25 });
-      
+
       // Second call immediately after should be throttled
       callback({ loaded: 50, total: 100, percentage: 50 });
 
@@ -91,11 +91,11 @@ describe('ProgressTracker', () => {
 
     it('should use enhanced ETA calculation options', () => {
       const cliProgress = require('cli-progress');
-      
+
       progressTracker.createProgressBar('Test with ETA smoothing', 100);
 
       expect(cliProgress.SingleBar).toHaveBeenCalledWith({
-        format: expect.stringContaining('ETA'),
+        format: expect.any(Function),
         barCompleteChar: '\u2588',
         barIncompleteChar: '\u2591',
         hideCursor: true,
@@ -119,7 +119,7 @@ describe('ProgressTracker', () => {
 
     it('should update stream progress for large chunks', () => {
       const callback = progressTracker.createStreamProgressBar('Upload');
-      
+
       callback({ 
         loaded: 2 * 1024 * 1024, // 2MB
         total: 10 * 1024 * 1024, // 10MB
@@ -131,7 +131,7 @@ describe('ProgressTracker', () => {
 
     it('should show completion message', () => {
       const callback = progressTracker.createStreamProgressBar('Upload');
-      
+
       callback({ 
         loaded: 10 * 1024 * 1024, // 10MB
         total: 10 * 1024 * 1024, // 10MB
