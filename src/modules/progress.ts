@@ -15,13 +15,7 @@ export class ProgressTracker {
 
   public createProgressBar(label: string, total?: number): ProgressCallback {
     this.progressBar = new cliProgress.SingleBar({
-      format: (options, params, payload) => {
-        const p = params as any;
-        const etaStr = p.eta !== null && p.percentage < 100 
-          ? `ETA: ${p.eta}s` 
-          : p.percentage === 100 ? 'Complete' : 'Calculating...';
-        return `${chalk.cyan(label)} |${p.bar}| ${p.percentage}% | ${p.value}/${p.total} | ${etaStr}`;
-      },
+      format: `${chalk.cyan(label)} |{bar}| {percentage}% | {value}/{total} | ETA: {eta}s`,
       barCompleteChar: '\u2588',
       barIncompleteChar: '\u2591',
       hideCursor: true,
@@ -75,7 +69,7 @@ export class ProgressTracker {
       if (this.lastUpdateTime > 0 && timeSinceLastUpdate > 0) {
         const valueChange = newValue - this.lastUpdateValue;
         const rate = valueChange / (timeSinceLastUpdate / 1000); // units per second
-
+        
         if (rate > 0) {
           this.progressRates.push(rate);
           if (this.progressRates.length > this.maxRateHistory) {
