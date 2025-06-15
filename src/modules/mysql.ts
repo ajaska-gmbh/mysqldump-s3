@@ -127,9 +127,6 @@ export class MySQLManager {
         '-P', this.config.port.toString(),
         '-u', this.config.user,
         `-p${this.config.password}`,
-        '--compress',
-        '--lock-tables=false',
-        '-e', 'SET foreign_key_checks = 0; SET unique_checks = 0; SET autocommit = 0;',
         targetDatabase
       ]);
 
@@ -250,9 +247,6 @@ export class MySQLManager {
         '-P', this.config.port.toString(),
         '-u', this.config.user,
         `-p${this.config.password}`,
-        '--compress',
-        '--lock-tables=false',
-        '-e', 'SET foreign_key_checks = 0; SET unique_checks = 0; SET autocommit = 0;',
         targetDatabase
       ]);
 
