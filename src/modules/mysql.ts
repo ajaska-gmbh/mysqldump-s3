@@ -231,6 +231,140 @@ export class MySQLManager {
     });
   }
 
+  public async restoreBackupFromStream(
+    inputStream: NodeJS.ReadableStream,
+    totalSize: number,
+    targetDatabase: string,
+    progressCallback?: ProgressCallback
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let processedBytes = 0;
+      let isResolved = false;
+
+      const gunzip = zlib.createGunzip();
+      const mysql = spawn('mysql', [
+        '-h', this.config.host,
+        '-P', this.config.port.toString(),
+        '-u', this.config.user,
+        `-p${this.config.password}`,
+        targetDatabase
+      ]);
+
+      let error = '';
+
+      const handleError = (err: Error, source: string) => {
+        if (!isResolved) {
+          isResolved = true;
+          // Clean up streams
+          const stream = inputStream as any;
+          if (stream && typeof stream.destroy === 'function') {
+            stream.destroy();
+          }
+          gunzip.destroy();
+          if (!mysql.killed) {
+            mysql.kill('SIGTERM');
+          }
+          reject(new Error(`${source}: ${err.message}`));
+        }
+      };
+
+      const handleSuccess = () => {
+        if (!isResolved) {
+          isResolved = true;
+          if (progressCallback) {
+            progressCallback({ loaded: totalSize, total: totalSize, percentage: 100 });
+          }
+          resolve();
+        }
+      };
+
+      // Track progress if callback provided
+      if (progressCallback && totalSize > 0) {
+        inputStream.on('data', (chunk) => {
+          processedBytes += chunk.length;
+          const percentage = (processedBytes / totalSize) * 100;
+          progressCallback({ 
+            loaded: processedBytes, 
+            total: totalSize, 
+            percentage 
+          });
+        });
+      }
+
+      // Handle mysql process errors
+      mysql.stderr.on('data', (data) => {
+        error += data.toString();
+      });
+
+      mysql.on('error', (err) => {
+        handleError(err, 'Failed to start mysql');
+      });
+
+      mysql.on('close', (code) => {
+        if (code !== 0) {
+          handleError(new Error(`mysql exited with code ${code}: ${error}`), 'MySQL process failed');
+        } else {
+          // Ensure all streams are properly closed before resolving
+          const stream = inputStream as any;
+          if (stream && typeof stream.destroy === 'function') {
+            stream.destroy();
+          }
+          gunzip.destroy();
+
+          // Small delay to ensure all resources are properly released
+          setTimeout(() => {
+            handleSuccess();
+          }, 100);
+        }
+      });
+
+      // Handle mysql stdin pipe errors (EPIPE protection)
+      mysql.stdin.on('error', (err: Error & { code?: string }) => {
+        // EPIPE error typically means the mysql process has closed
+        if (err.code === 'EPIPE') {
+          // Don't immediately reject, wait for mysql process to close
+          return;
+        }
+        handleError(err, 'MySQL stdin pipe error');
+      });
+
+      // Handle gunzip errors
+      gunzip.on('error', (err) => {
+        handleError(err, 'Decompression failed');
+      });
+
+      // Handle input stream errors
+      inputStream.on('error', (err) => {
+        handleError(err, 'Failed to read input stream');
+      });
+
+      // Set up the streaming pipeline: S3 → Gunzip → MySQL
+      const pipeline = inputStream.pipe(gunzip);
+      
+      pipeline.on('error', (err) => {
+        handleError(err, 'Pipeline error');
+      });
+
+      // Pipe to mysql with proper backpressure handling
+      pipeline.pipe(mysql.stdin, { end: true });
+
+      // Handle backpressure by pausing/resuming the input stream
+      mysql.stdin.on('drain', () => {
+        const stream = inputStream as any;
+        if (stream && typeof stream.resume === 'function') {
+          stream.resume();
+        }
+      });
+
+      if (mysql.stdin.writableHighWaterMark && mysql.stdin.writableLength > mysql.stdin.writableHighWaterMark) {
+        const stream = inputStream as any;
+        if (stream && typeof stream.pause === 'function') {
+          stream.pause();
+        }
+      }
+    });
+  }
+
   public async databaseExists(databaseName: string): Promise<boolean> {
     const connection = await createConnection({
       host: this.config.host,

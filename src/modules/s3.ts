@@ -225,6 +225,62 @@ export class S3Manager {
     return basename;
   }
 
+  public async downloadStream(
+    key: string,
+    progressCallback?: ProgressCallback
+  ): Promise<{ stream: NodeJS.ReadableStream; totalSize: number }> {
+    try {
+      // Get object size first
+      const headCommand = new HeadObjectCommand({
+        Bucket: this.config.bucket,
+        Key: key
+      });
+      
+      const headResponse = await this.s3Client.send(headCommand);
+      const totalSize = headResponse.ContentLength || 0;
+
+      // Download object
+      const downloadCommand = new GetObjectCommand({
+        Bucket: this.config.bucket,
+        Key: key
+      });
+
+      const response = await this.s3Client.send(downloadCommand);
+      
+      if (!response.Body) {
+        throw new Error('Empty response body from S3');
+      }
+
+      const readableStream = response.Body as NodeJS.ReadableStream;
+      let downloadedBytes = 0;
+
+      // Add progress tracking to the stream
+      if (progressCallback && totalSize > 0) {
+        readableStream.on('data', (chunk) => {
+          downloadedBytes += chunk.length;
+          const percentage = (downloadedBytes / totalSize) * 100;
+          progressCallback({
+            loaded: downloadedBytes,
+            total: totalSize,
+            percentage
+          });
+        });
+
+        readableStream.on('end', () => {
+          progressCallback({ 
+            loaded: downloadedBytes, 
+            total: totalSize, 
+            percentage: 100 
+          });
+        });
+      }
+
+      return { stream: readableStream, totalSize };
+    } catch (error) {
+      throw new Error(`Failed to create download stream from S3: ${error}`);
+    }
+  }
+
   public formatFileSize(bytes: number): string {
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     if (bytes === 0) return '0 Bytes';
