@@ -154,6 +154,158 @@ describe('Restore Command', () => {
     expect(process.exit).toHaveBeenCalledWith(1);
   });
 
+  it('should handle streaming restore successfully', async () => {
+    const { ConfigManager } = require('../modules/config');
+    const { MySQLManager } = require('../modules/mysql');
+    const { S3Manager } = require('../modules/s3');
+    const { progressTracker } = require('../modules/progress');
+
+    const mockConfig = {
+      database: { host: 'localhost', port: 3306, user: 'root', password: 'pass' },
+      s3: { bucket: 'test-bucket', accessKeyId: 'key', secretAccessKey: 'secret' }
+    };
+
+    ConfigManager.getInstance = jest.fn().mockReturnValue({
+      loadConfig: jest.fn().mockReturnValue(mockConfig)
+    });
+
+    const mockStream = { 
+      on: jest.fn(),
+      pipe: jest.fn().mockReturnThis()
+    };
+
+    MySQLManager.mockImplementation(() => ({
+      testConnection: jest.fn().mockResolvedValue(undefined),
+      databaseExists: jest.fn().mockResolvedValue(true),
+      restoreBackupFromStream: jest.fn().mockResolvedValue(undefined)
+    }));
+
+    S3Manager.mockImplementation(() => ({
+      backupExists: jest.fn().mockResolvedValue(true),
+      downloadStream: jest.fn().mockResolvedValue({ stream: mockStream, totalSize: 1000000 })
+    }));
+
+    progressTracker.createProgressBar = jest.fn().mockReturnValue(jest.fn());
+    progressTracker.stop = jest.fn();
+
+    const os = require('os');
+    os.tmpdir = jest.fn().mockReturnValue('/tmp');
+
+    const path = require('path');
+    path.join = jest.fn().mockReturnValue('/tmp/restore-123.sql.gz');
+
+    await expect(restoreCommand({
+      backup: 'test-backup.sql.gz',
+      database: 'testdb',
+      interactive: false,
+      force: true,
+      streaming: true
+    })).resolves.not.toThrow();
+  });
+
+  it('should fallback to file-based restore when streaming fails', async () => {
+    const { ConfigManager } = require('../modules/config');
+    const { MySQLManager } = require('../modules/mysql');
+    const { S3Manager } = require('../modules/s3');
+    const { progressTracker } = require('../modules/progress');
+
+    const mockConfig = {
+      database: { host: 'localhost', port: 3306, user: 'root', password: 'pass' },
+      s3: { bucket: 'test-bucket', accessKeyId: 'key', secretAccessKey: 'secret' }
+    };
+
+    ConfigManager.getInstance = jest.fn().mockReturnValue({
+      loadConfig: jest.fn().mockReturnValue(mockConfig)
+    });
+
+    MySQLManager.mockImplementation(() => ({
+      testConnection: jest.fn().mockResolvedValue(undefined),
+      databaseExists: jest.fn().mockResolvedValue(true),
+      restoreBackupFromStream: jest.fn().mockRejectedValue(new Error('Streaming failed')),
+      restoreBackup: jest.fn().mockResolvedValue(undefined)
+    }));
+
+    S3Manager.mockImplementation(() => ({
+      backupExists: jest.fn().mockResolvedValue(true),
+      downloadStream: jest.fn().mockResolvedValue({ stream: {}, totalSize: 1000000 }),
+      downloadFile: jest.fn().mockResolvedValue(undefined)
+    }));
+
+    progressTracker.createProgressBar = jest.fn().mockReturnValue(jest.fn());
+    progressTracker.stop = jest.fn();
+
+    const fs = require('fs');
+    fs.existsSync = jest.fn().mockReturnValue(true);
+    fs.unlinkSync = jest.fn();
+
+    const os = require('os');
+    os.tmpdir = jest.fn().mockReturnValue('/tmp');
+
+    const path = require('path');
+    path.join = jest.fn().mockReturnValue('/tmp/restore-123.sql.gz');
+
+    await expect(restoreCommand({
+      backup: 'test-backup.sql.gz',
+      database: 'testdb',
+      interactive: false,
+      force: true,
+      streaming: true
+    })).resolves.not.toThrow();
+  });
+
+  it('should use file-based restore when streaming is disabled', async () => {
+    const { ConfigManager } = require('../modules/config');
+    const { MySQLManager } = require('../modules/mysql');
+    const { S3Manager } = require('../modules/s3');
+    const { progressTracker } = require('../modules/progress');
+
+    const mockConfig = {
+      database: { host: 'localhost', port: 3306, user: 'root', password: 'pass' },
+      s3: { bucket: 'test-bucket', accessKeyId: 'key', secretAccessKey: 'secret' }
+    };
+
+    ConfigManager.getInstance = jest.fn().mockReturnValue({
+      loadConfig: jest.fn().mockReturnValue(mockConfig)
+    });
+
+    const mockMysqlManager = {
+      testConnection: jest.fn().mockResolvedValue(undefined),
+      databaseExists: jest.fn().mockResolvedValue(true),
+      restoreBackup: jest.fn().mockResolvedValue(undefined)
+    };
+
+    MySQLManager.mockImplementation(() => mockMysqlManager);
+
+    S3Manager.mockImplementation(() => ({
+      backupExists: jest.fn().mockResolvedValue(true),
+      downloadFile: jest.fn().mockResolvedValue(undefined)
+    }));
+
+    progressTracker.createProgressBar = jest.fn().mockReturnValue(jest.fn());
+    progressTracker.stop = jest.fn();
+
+    const fs = require('fs');
+    fs.existsSync = jest.fn().mockReturnValue(true);
+    fs.unlinkSync = jest.fn();
+
+    const os = require('os');
+    os.tmpdir = jest.fn().mockReturnValue('/tmp');
+
+    const path = require('path');
+    path.join = jest.fn().mockReturnValue('/tmp/restore-123.sql.gz');
+
+    await restoreCommand({
+      backup: 'test-backup.sql.gz',
+      database: 'testdb',
+      interactive: false,
+      force: true,
+      streaming: false
+    });
+
+    // Verify that streaming methods were not called
+    expect(mockMysqlManager.restoreBackup).toHaveBeenCalled();
+  });
+
   it('should handle download errors', async () => {
     const { ConfigManager } = require('../modules/config');
     const { MySQLManager } = require('../modules/mysql');

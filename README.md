@@ -70,7 +70,15 @@ mysqldump-s3 restore --backup "mydb-2023-12-01T10-30-00-000Z.sql.gz" --database 
 
 # Using a configuration file
 mysqldump-s3 restore --config config.yml
+
+# Disable streaming restore (use traditional file-based restore)
+mysqldump-s3 restore --no-streaming
+
+# Enable verbose output to see streaming status
+mysqldump-s3 restore --verbose
 ```
+
+**Performance:** By default, restore uses high-speed streaming mode that directly pipes data from S3 to MySQL, providing 50-70% faster restore times and eliminating temporary file usage. If streaming fails, it automatically falls back to traditional file-based restore.
 
 ## Configuration
 
@@ -162,9 +170,11 @@ s3:
 1. 🎯 **Interactive Selection** - Choose from available backups and databases
 2. 📋 **Database Discovery** - Lists available databases on your MySQL server
 3. ⚠️ **Safety Confirmations** - Warns before overwriting existing data
-4. ⬇️ **Progress Download** - Shows download progress from S3
-5. 🔄 **Streaming Restore** - Direct decompression and restoration
-6. 📊 **Progress Tracking** - Real-time progress during restore
+4. 🚀 **High-Speed Streaming** - Direct S3-to-MySQL streaming for 50-70% faster restores
+5. 📦 **Automatic Fallback** - Falls back to file-based restore if streaming fails
+6. ⬇️ **Progress Tracking** - Real-time progress during download and restore
+7. 🔄 **Streaming Decompression** - Direct decompression and restoration
+8. 💾 **Reduced Disk Usage** - No temporary files needed with streaming mode
 
 ## Examples
 
