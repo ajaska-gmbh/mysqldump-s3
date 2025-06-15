@@ -164,44 +164,7 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
     const tempBackupPath = path.join(tempDir, `restore-${Date.now()}.sql.gz`);
 
     try {
-      // Try streaming restore first (unless explicitly disabled)
-      if (options.streaming !== false) {
-        try {
-          console.log(chalk.blue('ℹ Starting streaming restore from S3...'));
-          const restoreProgress = progressTracker.createProgressBar('Streaming restore');
-
-          // Get download stream from S3
-          const { stream, totalSize } = await s3Manager.downloadStream(selectedBackupKey, restoreProgress);
-          
-          // Stream directly to MySQL
-          await mysqlManager.restoreBackupFromStream(stream, totalSize, targetDatabase, restoreProgress);
-          progressTracker.stop();
-          console.log(chalk.green('✓ Streaming restore completed'));
-
-          // Success message
-          console.log('');
-          console.log(chalk.green.bold('🎉 Restore completed successfully!'));
-          console.log('');
-          console.log(`${chalk.cyan('Restore details:')}`);
-          console.log(`  Backup: ${selectedBackupKey}`);
-          console.log(`  Target database: ${targetDatabase}`);
-          console.log(`  MySQL server: ${config.database.host}:${config.database.port}`);
-          console.log(`  Method: Streaming (no temporary file)`);
-          console.log(`  Completed: ${new Date().toLocaleString()}`);
-          return;
-
-        } catch (streamError) {
-          progressTracker.stop();
-          if (options.verbose) {
-            console.log(chalk.yellow(`⚠ Streaming restore failed: ${streamError}`));
-            console.log(chalk.yellow('ℹ Falling back to file-based restore...'));
-          } else {
-            console.log(chalk.yellow('ℹ Falling back to file-based restore...'));
-          }
-        }
-      }
-
-      // Fallback to file-based restore (original implementation)
+      // Download backup
       console.log(chalk.blue('ℹ Downloading backup from S3...'));
       const downloadProgress = progressTracker.createProgressBar('Downloading');
 
@@ -225,7 +188,6 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
       console.log(`  Backup: ${selectedBackupKey}`);
       console.log(`  Target database: ${targetDatabase}`);
       console.log(`  MySQL server: ${config.database.host}:${config.database.port}`);
-      console.log(`  Method: File-based restore`);
       console.log(`  Completed: ${new Date().toLocaleString()}`);
 
     } finally {

@@ -47,7 +47,6 @@ export interface RestoreOptions {
   interactive?: boolean;
   force?: boolean;
   verbose?: boolean;
-  streaming?: boolean; // New option to control streaming vs file-based restore
 }
 
 export interface ProgressCallback {

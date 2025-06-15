@@ -46,13 +46,11 @@ program
   .option('-d, --database <name>', 'Target database name (required for non-interactive mode)')
   .option('--non-interactive', 'Run in non-interactive mode')
   .option('--force', 'Skip confirmation prompts')
-  .option('--no-streaming', 'Disable streaming restore (use file-based restore)')
   .option('-v, --verbose', 'Enable verbose output')
   .action(async (options) => {
     await restoreCommand({
       ...options,
-      interactive: !options.nonInteractive,
-      streaming: options.streaming // This will be true by default unless --no-streaming is used
+      interactive: !options.nonInteractive
     });
   });
 
