@@ -165,8 +165,6 @@ s3:
 4. ⬇️ **Progress Download** - Shows download progress from S3
 5. 🔄 **Streaming Restore** - Direct decompression and restoration
 6. 📊 **Progress Tracking** - Real-time progress during restore
-7. ⚡ **Performance Optimized** - High-speed restoration with optimized MySQL settings
-8. 🚀 **Large Database Support** - Efficiently handles large dumps (400MB+ files)
 
 ## Examples
 

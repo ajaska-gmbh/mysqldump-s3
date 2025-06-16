@@ -110,19 +110,6 @@ export class MySQLManager {
     });
   }
 
-  /**
-   * Restores a MySQL backup from a gzipped SQL file with optimized performance.
-   * 
-   * Performance optimizations:
-   * 1. Uses a temporary my.cnf file with optimized client settings
-   * 2. Increases max_allowed_packet and net_buffer_length for faster data transfer
-   * 3. Disables foreign key checks, unique checks, and autocommit during import
-   * 4. Disables binary logging during import
-   * 5. Re-enables all checks and commits changes after import completes
-   * 
-   * These optimizations can significantly reduce restoration time for large dumps.
-   * A 400MB dump that previously took 2 hours may now complete in minutes.
-   */
   public async restoreBackup(backupPath: string, targetDatabase: string, progressCallback?: ProgressCallback): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!fs.existsSync(backupPath)) {
@@ -135,36 +122,11 @@ export class MySQLManager {
       let processedBytes = 0;
 
       const gunzip = zlib.createGunzip();
-
-      // Create a temporary my.cnf file with optimized settings
-      const tempMyCnfPath = `/tmp/mysql_restore_${Date.now()}.cnf`;
-      const myCnfContent = `
-[client]
-host=${this.config.host}
-port=${this.config.port}
-user=${this.config.user}
-password=${this.config.password}
-
-[mysql]
-max_allowed_packet=1G
-net_buffer_length=1000000
-default-character-set=utf8
-`;
-
-      try {
-        fs.writeFileSync(tempMyCnfPath, myCnfContent, { mode: 0o600 }); // Secure permissions
-      } catch (err) {
-        reject(new Error(`Failed to create temporary MySQL config: ${err}`));
-        return;
-      }
-
-      // Add performance optimization flags to MySQL client
       const mysql = spawn('mysql', [
-        `--defaults-file=${tempMyCnfPath}`,
-        '--max-allowed-packet=1G',        // Increase max packet size
-        '--net-buffer-length=1000000',    // Increase network buffer
-        '--default-character-set=utf8',   // Ensure consistent character set
-        '--init-command=SET SESSION FOREIGN_KEY_CHECKS=0; SET SESSION UNIQUE_CHECKS=0; SET SESSION AUTOCOMMIT=0;',
+        '-h', this.config.host,
+        '-P', this.config.port.toString(),
+        '-u', this.config.user,
+        `-p${this.config.password}`,
         targetDatabase
       ]);
 
@@ -212,15 +174,6 @@ default-character-set=utf8
       });
 
       mysql.on('close', (code) => {
-        // Clean up the temporary my.cnf file
-        if (fs.existsSync(tempMyCnfPath)) {
-          try {
-            fs.unlinkSync(tempMyCnfPath);
-          } catch (err) {
-            console.error(`Warning: Failed to delete temporary MySQL config file: ${err}`);
-          }
-        }
-
         if (code !== 0) {
           handleError(new Error(`mysql exited with code ${code}: ${error}`), 'MySQL process failed');
         } else {
@@ -264,25 +217,8 @@ default-character-set=utf8
         handleError(err, 'Pipeline error');
       });
 
-      // Disable constraints and checks before import to improve performance
-      mysql.stdin.write('SET FOREIGN_KEY_CHECKS=0;\n');
-      mysql.stdin.write('SET UNIQUE_CHECKS=0;\n');
-      mysql.stdin.write('SET AUTOCOMMIT=0;\n');
-      mysql.stdin.write('SET SQL_LOG_BIN=0;\n');
-
       // Set up the final pipe to mysql with error handling
-      pipeline.pipe(mysql.stdin, { end: false });  // Changed to end: false to allow writing after pipe ends
-
-      // Handle pipeline end to re-enable constraints and commit
-      pipeline.on('end', () => {
-        // Re-enable constraints and checks after import
-        mysql.stdin.write('SET FOREIGN_KEY_CHECKS=1;\n');
-        mysql.stdin.write('SET UNIQUE_CHECKS=1;\n');
-        mysql.stdin.write('SET AUTOCOMMIT=1;\n');
-        mysql.stdin.write('SET SQL_LOG_BIN=1;\n');
-        mysql.stdin.write('COMMIT;\n');
-        mysql.stdin.end();  // Now end the stream
-      });
+      pipeline.pipe(mysql.stdin, { end: true });
 
       // Handle backpressure by pausing/resuming the input stream
       mysql.stdin.on('drain', () => {
