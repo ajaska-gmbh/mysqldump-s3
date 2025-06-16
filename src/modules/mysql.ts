@@ -122,11 +122,20 @@ export class MySQLManager {
       let processedBytes = 0;
 
       const gunzip = zlib.createGunzip();
+      // Use optimized MySQL parameters for faster import
       const mysql = spawn('mysql', [
         '-h', this.config.host,
         '-P', this.config.port.toString(),
         '-u', this.config.user,
         `-p${this.config.password}`,
+        // Performance optimization flags
+        '--max_allowed_packet=1G',
+        '--net_buffer_length=1000000',
+        // Continue even if errors occur
+        '--force',
+        // Set session variables to optimize import performance
+        // Use session variables where possible to avoid requiring SUPER privileges
+        '--init-command=SET SESSION foreign_key_checks=0; SET SESSION unique_checks=0; SET SESSION autocommit=0; SET SESSION sql_log_bin=0;',
         targetDatabase
       ]);
 
@@ -141,9 +150,35 @@ export class MySQLManager {
         }
       };
 
-      const handleSuccess = () => {
+      const handleSuccess = async () => {
         if (!isResolved) {
           isResolved = true;
+
+          // Reset MySQL settings to safe values after import
+          try {
+            const connection = await createConnection({
+              host: this.config.host,
+              port: this.config.port,
+              user: this.config.user,
+              password: this.config.password
+            });
+
+            // Reset session variables to their default values
+            await connection.execute('SET SESSION foreign_key_checks=1');
+            await connection.execute('SET SESSION unique_checks=1');
+            await connection.execute('SET SESSION autocommit=1');
+            await connection.execute('SET SESSION sql_log_bin=1');
+
+            // Commit any pending transactions in the target database
+            await connection.execute(`USE ${targetDatabase}`);
+            await connection.execute('COMMIT');
+
+            await connection.end();
+          } catch (err) {
+            console.warn(`Warning: Failed to reset MySQL settings: ${err instanceof Error ? err.message : String(err)}`);
+            // Continue with resolution even if reset fails
+          }
+
           if (progressCallback) {
             progressCallback({ loaded: totalSize, total: totalSize, percentage: 100 });
           }
@@ -153,14 +188,33 @@ export class MySQLManager {
 
       // Track progress if callback provided
       if (progressCallback) {
-        input.on('data', (chunk) => {
-          processedBytes += chunk.length;
-          const percentage = (processedBytes / totalSize) * 100;
+        // Track progress on the decompressed data for more accurate feedback
+        let decompressedBytes = 0;
+
+        // Initialize with a rough estimate that decompressed size is ~5x compressed size
+        // This will be adjusted as we process the actual data
+        let estimatedTotalDecompressed = totalSize * 5;
+
+        gunzip.on('data', (chunk) => {
+          decompressedBytes += chunk.length;
+
+          // Dynamically adjust the total estimate based on compression ratio observed so far
+          if (processedBytes > 0) {
+            const currentRatio = decompressedBytes / processedBytes;
+            estimatedTotalDecompressed = totalSize * currentRatio;
+          }
+
+          const percentage = Math.min(99, (decompressedBytes / estimatedTotalDecompressed) * 100);
           progressCallback({ 
-            loaded: processedBytes, 
-            total: totalSize, 
+            loaded: decompressedBytes, 
+            total: estimatedTotalDecompressed, 
             percentage 
           });
+        });
+
+        // Also track compressed data progress for reference
+        input.on('data', (chunk) => {
+          processedBytes += chunk.length;
         });
       }
 
