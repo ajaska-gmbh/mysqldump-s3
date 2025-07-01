@@ -6,15 +6,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a TypeScript CLI tool for MySQL database backup and restore operations with S3 integration. It's a complete rewrite of the original Docker-based solution, now providing a modern Node.js CLI with enhanced features.
 
+## Code Quality Requirements
+
+**CRITICAL**: Before committing any code changes, you MUST run the following commands and ensure they pass without errors:
+
+1. **Linting**: `npm run lint` - Fix any ESLint errors before committing
+2. **Build**: `npm run build` - Ensure TypeScript compiles without errors
+3. **Tests**: `npm test` - Verify all tests pass
+
+These checks are **essential** because:
+- GitHub Actions CI/CD pipeline will fail if linting errors exist
+- TypeScript compilation errors will break the build process
+- The workflow includes both unit tests and integration tests that require clean, error-free code
+- Failed CI checks will block merges and deployments
+
+**Development Workflow**:
+```bash
+# Make your changes
+npm run lint        # Fix any linting issues
+npm run lint:fix    # Auto-fix what can be fixed
+npm run build       # Ensure TypeScript compiles
+npm test            # Run all tests
+# Only commit if all above commands succeed
+```
+
 ## Commands
 
 ### Development Commands
 - `npm run dev` - Run the CLI in development mode using ts-node
-- `npm run build` - Compile TypeScript to JavaScript (output to /dist)
-- `npm test` - Run all Jest tests
+- `npm run build` - **REQUIRED BEFORE COMMIT** - Compile TypeScript to JavaScript (output to /dist)
+- `npm test` - **REQUIRED BEFORE COMMIT** - Run all Jest tests
 - `npm run test:watch` - Run tests in watch mode
 - `npm run test:coverage` - Generate test coverage report (HTML in /coverage)
-- `npm run lint` - Run ESLint on TypeScript files
+- `npm run lint` - **REQUIRED BEFORE COMMIT** - Run ESLint on TypeScript files
 - `npm run lint:fix` - Auto-fix linting issues
 - `npm run clean` - Remove build artifacts and coverage reports
 
