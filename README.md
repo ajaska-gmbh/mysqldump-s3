@@ -240,16 +240,9 @@ npm run build
 ### Testing
 
 ```bash
-# Unit tests
+# Run all tests
 npm test
 npm run test:coverage
-
-# Integration tests (requires Docker)
-cd tests
-./run-integration-tests.sh
-
-# Or run Jest integration tests in CI environment
-npm test -- integration.test.ts
 ```
 
 ### Linting

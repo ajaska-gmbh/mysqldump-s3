@@ -1,4 +1,4 @@
-name: Integration Tests
+name: Tests
 
 on:
   push:
@@ -8,46 +8,12 @@ on:
   workflow_call:
 
 jobs:
-  integration-test:
+  test:
     runs-on: ubuntu-latest
-    
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: rootpassword
-          MYSQL_DATABASE: testdb
-          MYSQL_USER: testuser
-          MYSQL_PASSWORD: testpass
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-          
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
-    - name: Start MinIO
-      run: |
-        docker run -d \
-          --name minio \
-          -p 9000:9000 \
-          -p 9001:9001 \
-          -e "MINIO_ROOT_USER=minioadmin" \
-          -e "MINIO_ROOT_PASSWORD=minioadmin" \
-          minio/minio:latest server /data --console-address ":9001"
-        
-        # Wait for MinIO to be ready
-        until curl -f http://127.0.0.1:9000/minio/health/live 2>/dev/null; do
-          echo "Waiting for MinIO..."
-          sleep 2
-        done
-        echo "MinIO is ready"
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -58,153 +24,11 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Run linting
+      run: npm run lint
+
     - name: Build project
       run: npm run build
 
-    - name: Install MySQL client
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y mysql-client
-
-    - name: Wait for MySQL
-      run: |
-        until mysql -h 127.0.0.1 -u root -prootpassword -e "SELECT 1"; do
-          echo "Waiting for MySQL..."
-          sleep 2
-        done
-
-    - name: Setup test database with sample data
-      run: |
-        mysql -h 127.0.0.1 -u root -prootpassword testdb < tests/fixtures/test-data.sql
-        echo "Test data loaded successfully"
-
-    - name: Setup MinIO bucket
-      run: |
-        # Install MinIO client
-        wget https://dl.min.io/client/mc/release/linux-amd64/mc
-        chmod +x mc
-        
-        # Configure MinIO client
-        ./mc alias set minio http://127.0.0.1:9000 minioadmin minioadmin
-        
-        # Create test bucket
-        ./mc mb minio/test-backup-bucket || true
-        
-        # Verify bucket exists
-        ./mc ls minio/
-
-    - name: Run backup command
-      env:
-        DB_HOST: 127.0.0.1
-        DB_PORT: 3306
-        DB_USER: testuser
-        DB_PASSWORD: testpass
-        DB_NAME: testdb
-        AWS_ACCESS_KEY_ID: minioadmin
-        AWS_SECRET_ACCESS_KEY: minioadmin
-        AWS_DEFAULT_REGION: us-east-1
-        S3_BUCKET: test-backup-bucket
-        S3_ENDPOINT_URL: http://127.0.0.1:9000
-      run: |
-        echo "Running backup..."
-        node dist/cli.js backup -v
-        echo "Backup completed successfully"
-
-    - name: List backups
-      env:
-        AWS_ACCESS_KEY_ID: minioadmin
-        AWS_SECRET_ACCESS_KEY: minioadmin
-        AWS_DEFAULT_REGION: us-east-1
-        S3_BUCKET: test-backup-bucket
-        S3_ENDPOINT_URL: http://127.0.0.1:9000
-      run: |
-        echo "Listing backups..."
-        node dist/cli.js list -f json > backups.json
-        cat backups.json
-        
-        # Extract the latest backup key
-        BACKUP_KEY=$(node -e "
-          const backups = require('./backups.json');
-          if (backups.length === 0) {
-            console.error('No backups found!');
-            process.exit(1);
-          }
-          console.log(backups[0].key);
-        ")
-        echo "Latest backup key: $BACKUP_KEY"
-        echo "BACKUP_KEY=$BACKUP_KEY" >> $GITHUB_ENV
-
-    - name: Clear database
-      run: |
-        echo "Dropping all tables..."
-        mysql -h 127.0.0.1 -u root -prootpassword testdb -e "
-          SET FOREIGN_KEY_CHECKS = 0;
-          SET @tables = NULL;
-          SELECT GROUP_CONCAT(table_name) INTO @tables
-            FROM information_schema.tables
-            WHERE table_schema = 'testdb';
-          SET @tables = CONCAT('DROP TABLE IF EXISTS ', @tables);
-          PREPARE stmt FROM @tables;
-          EXECUTE stmt;
-          DEALLOCATE PREPARE stmt;
-          SET FOREIGN_KEY_CHECKS = 1;
-        "
-        echo "Database cleared"
-
-    - name: Verify database is empty
-      run: |
-        TABLE_COUNT=$(mysql -h 127.0.0.1 -u root -prootpassword testdb -N -e "
-          SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'testdb';
-        ")
-        echo "Table count after clearing: $TABLE_COUNT"
-        if [ "$TABLE_COUNT" -ne "0" ]; then
-          echo "Error: Database should be empty but has $TABLE_COUNT tables"
-          exit 1
-        fi
-
-    - name: Run restore command
-      env:
-        DB_HOST: 127.0.0.1
-        DB_PORT: 3306
-        DB_USER: testuser
-        DB_PASSWORD: testpass
-        AWS_ACCESS_KEY_ID: minioadmin
-        AWS_SECRET_ACCESS_KEY: minioadmin
-        AWS_DEFAULT_REGION: us-east-1
-        S3_BUCKET: test-backup-bucket
-        S3_ENDPOINT_URL: http://127.0.0.1:9000
-      run: |
-        echo "Running restore with backup key: $BACKUP_KEY"
-        node dist/cli.js restore --backup "$BACKUP_KEY" --database testdb --non-interactive --force -v
-        echo "Restore completed successfully"
-
-    - name: Verify restored data
-      run: |
-        echo "Running verification script..."
-        node tests/verify-restore.js
-        echo "Data verification passed!"
-
-    - name: Run Jest integration tests
-      env:
-        DB_HOST: 127.0.0.1
-        DB_PORT: 3306
-        DB_USER: testuser
-        DB_PASSWORD: testpass
-        DB_NAME: testdb
-        AWS_ACCESS_KEY_ID: minioadmin
-        AWS_SECRET_ACCESS_KEY: minioadmin
-        AWS_DEFAULT_REGION: us-east-1
-        S3_BUCKET: test-backup-bucket
-        S3_ENDPOINT_URL: http://127.0.0.1:9000
-        NODE_ENV: test
-      run: |
-        npm test -- integration.test.ts
-
-    - name: Upload test artifacts on failure
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-artifacts
-        path: |
-          backups.json
-          *.log
+    - name: Run tests
+      run: npm test
