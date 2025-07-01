@@ -1,6 +1,14 @@
 // Jest setup file
 import 'jest';
 
+// Mock AWS SDK dependencies that cause test failures
+jest.mock('@aws-sdk/lib-storage', () => ({
+  Upload: jest.fn().mockImplementation(() => ({
+    on: jest.fn(),
+    done: jest.fn().mockResolvedValue({})
+  }))
+}));
+
 // Set up global test environment
 beforeEach(() => {
   // Reset environment variables before each test

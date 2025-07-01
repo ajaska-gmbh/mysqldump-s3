@@ -11,6 +11,13 @@ jest.mock('@aws-sdk/client-s3', () => ({
   HeadObjectCommand: jest.fn()
 }));
 
+jest.mock('@aws-sdk/lib-storage', () => ({
+  Upload: jest.fn().mockImplementation(() => ({
+    on: jest.fn(),
+    done: jest.fn()
+  }))
+}));
+
 // Mock fs
 jest.mock('fs', () => ({
   existsSync: jest.fn(),
@@ -75,25 +82,42 @@ describe('S3Manager', () => {
   describe('uploadFile', () => {
     it('should upload file successfully', async () => {
       const fs = require('fs');
+      const { Upload } = require('@aws-sdk/lib-storage');
+      
       const mockReadStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            setTimeout(() => callback(Buffer.alloc(1024)), 10);
-          }
-        }),
+        on: jest.fn(),
         pipe: jest.fn()
       };
+
+      const mockUpload = {
+        on: jest.fn((event, callback) => {
+          if (event === 'httpUploadProgress') {
+            setTimeout(() => callback({ loaded: 512, total: 1024 }), 10);
+          }
+        }),
+        done: jest.fn().mockResolvedValue({})
+      };
+
+      Upload.mockImplementation(() => mockUpload);
 
       fs.existsSync.mockReturnValue(true);
       fs.statSync.mockReturnValue({ size: 1024 });
       fs.createReadStream.mockReturnValue(mockReadStream);
-      mockS3Client.send.mockResolvedValue({});
 
       const progressCallback = jest.fn();
 
       await s3Manager.uploadFile('/path/to/file.sql.gz', 'backup.sql.gz', progressCallback);
 
-      expect(mockS3Client.send).toHaveBeenCalled();
+      expect(Upload).toHaveBeenCalledWith({
+        client: mockS3Client,
+        params: {
+          Bucket: 'test-bucket',
+          Key: 'backup.sql.gz',
+          Body: mockReadStream,
+          ContentType: 'application/gzip'
+        }
+      });
+      expect(mockUpload.done).toHaveBeenCalled();
       expect(fs.existsSync).toHaveBeenCalledWith('/path/to/file.sql.gz');
     });
 
@@ -107,15 +131,23 @@ describe('S3Manager', () => {
 
     it('should handle upload errors', async () => {
       const fs = require('fs');
+      const { Upload } = require('@aws-sdk/lib-storage');
+      
       const mockReadStream = {
         on: jest.fn(),
         pipe: jest.fn()
       };
 
+      const mockUpload = {
+        on: jest.fn(),
+        done: jest.fn().mockRejectedValue(new Error('Upload failed'))
+      };
+
+      Upload.mockImplementation(() => mockUpload);
+
       fs.existsSync.mockReturnValue(true);
       fs.statSync.mockReturnValue({ size: 1024 });
       fs.createReadStream.mockReturnValue(mockReadStream);
-      mockS3Client.send.mockRejectedValue(new Error('Upload failed'));
 
       await expect(s3Manager.uploadFile('/path/to/file.sql.gz', 'backup.sql.gz'))
         .rejects.toThrow('Failed to upload to S3: Error: Upload failed');

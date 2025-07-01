@@ -7,3 +7,7 @@ coverage/
 *.tgz
 temp/
 tmp/
+
+# Test artifacts
+tests/backups.json
+tests/*.log
