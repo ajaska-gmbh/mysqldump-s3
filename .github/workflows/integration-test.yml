@@ -27,24 +27,27 @@ jobs:
           --health-timeout=5s
           --health-retries=5
           
-      minio:
-        image: minio/minio:latest
-        ports:
-          - 9000:9000
-          - 9001:9001
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-        options: >-
-          --health-cmd="curl -f http://localhost:9000/minio/health/live"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-          server /data --console-address ":9001"
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Start MinIO
+      run: |
+        docker run -d \
+          --name minio \
+          -p 9000:9000 \
+          -p 9001:9001 \
+          -e "MINIO_ROOT_USER=minioadmin" \
+          -e "MINIO_ROOT_PASSWORD=minioadmin" \
+          minio/minio:latest server /data --console-address ":9001"
+        
+        # Wait for MinIO to be ready
+        until curl -f http://127.0.0.1:9000/minio/health/live 2>/dev/null; do
+          echo "Waiting for MinIO..."
+          sleep 2
+        done
+        echo "MinIO is ready"
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
