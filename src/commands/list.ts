@@ -5,9 +5,9 @@ import { S3Manager } from '../modules/s3';
 
 export async function listCommand(options: ListOptions): Promise<void> {
   try {
-    // Load configuration
+    // Load configuration - list command only needs S3 credentials
     const configManager = ConfigManager.getInstance();
-    const config = configManager.loadConfig(options.configFile);
+    const config = configManager.loadConfig(options.configFile, { requireDatabase: false, requireS3: true });
 
     if (options.verbose) {
       console.log(chalk.blue('ℹ Configuration loaded successfully'));

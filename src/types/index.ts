@@ -52,3 +52,8 @@ export interface RestoreOptions {
 export interface ProgressCallback {
   (progress: { loaded?: number; total?: number; percentage?: number }): void;
 }
+
+export interface ValidationContext {
+  requireDatabase?: boolean;
+  requireS3?: boolean;
+}

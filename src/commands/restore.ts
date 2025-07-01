@@ -11,9 +11,9 @@ import { progressTracker } from '../modules/progress';
 
 export async function restoreCommand(options: RestoreOptions): Promise<void> {
   try {
-    // Load configuration
+    // Load configuration - restore command needs both database and S3 credentials
     const configManager = ConfigManager.getInstance();
-    const config = configManager.loadConfig(options.configFile);
+    const config = configManager.loadConfig(options.configFile, { requireDatabase: true, requireS3: true });
 
     if (options.verbose) {
       console.log(chalk.blue('ℹ Configuration loaded successfully'));

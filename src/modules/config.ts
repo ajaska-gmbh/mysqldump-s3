@@ -16,7 +16,7 @@ export class ConfigManager {
     return ConfigManager.instance;
   }
 
-  public loadConfig(configFile?: string): AppConfig {
+  public loadConfig(configFile?: string, context?: { requireDatabase?: boolean; requireS3?: boolean }): AppConfig {
     if (this.config) {
       return this.config;
     }
@@ -40,8 +40,8 @@ export class ConfigManager {
     // Merge configurations (env variables take precedence)
     this.config = this.mergeConfigs(fileConfig, envConfig);
     
-    // Validate required fields
-    this.validateConfig(this.config);
+    // Validate required fields with context
+    this.validateConfig(this.config, context);
     
     return this.config;
   }
@@ -92,18 +92,26 @@ export class ConfigManager {
     };
   }
 
-  private validateConfig(config: AppConfig): void {
+  private validateConfig(config: AppConfig, context?: { requireDatabase?: boolean; requireS3?: boolean }): void {
     const errors: string[] = [];
 
-    // Validate database config
-    if (!config.database.host) errors.push('Database host is required (DB_HOST)');
-    if (!config.database.user) errors.push('Database user is required (DB_USER)');
-    if (!config.database.password) errors.push('Database password is required (DB_PASSWORD)');
+    // Default to requiring both database and S3 if no context provided
+    const requireDatabase = context?.requireDatabase ?? true;
+    const requireS3 = context?.requireS3 ?? true;
 
-    // Validate S3 config
-    if (!config.s3.accessKeyId) errors.push('AWS access key ID is required (AWS_ACCESS_KEY_ID)');
-    if (!config.s3.secretAccessKey) errors.push('AWS secret access key is required (AWS_SECRET_ACCESS_KEY)');
-    if (!config.s3.bucket) errors.push('S3 bucket is required (S3_BUCKET)');
+    // Validate database config only if required
+    if (requireDatabase) {
+      if (!config.database.host) errors.push('Database host is required (DB_HOST)');
+      if (!config.database.user) errors.push('Database user is required (DB_USER)');
+      if (!config.database.password) errors.push('Database password is required (DB_PASSWORD)');
+    }
+
+    // Validate S3 config only if required
+    if (requireS3) {
+      if (!config.s3.accessKeyId) errors.push('AWS access key ID is required (AWS_ACCESS_KEY_ID)');
+      if (!config.s3.secretAccessKey) errors.push('AWS secret access key is required (AWS_SECRET_ACCESS_KEY)');
+      if (!config.s3.bucket) errors.push('S3 bucket is required (S3_BUCKET)');
+    }
 
     if (errors.length > 0) {
       throw new Error(`Configuration validation failed:\n${errors.join('\n')}`);
