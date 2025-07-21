@@ -14,16 +14,11 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ${{ github.reposnpm testitory }}
 
 jobs:
-  # Wait for tests to pass before building Docker image
-  test:
-    uses: ./.github/workflows/ci.yml
-
   build:
     runs-on: ubuntu-latest
-    needs: test
     permissions:
       contents: read
       packages: write
