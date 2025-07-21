@@ -120,23 +120,46 @@ export class MySQLManager {
       const stats = fs.statSync(backupPath);
       const totalSize = stats.size;
       let processedBytes = 0;
+      let lastProgressUpdate = 0;
 
-      const gunzip = zlib.createGunzip();
+      const gunzip = zlib.createGunzip({
+        chunkSize: 64 * 1024 // 64KB chunks for better performance
+      });
+      
       const mysql = spawn('mysql', [
         '-h', this.config.host,
         '-P', this.config.port.toString(),
         '-u', this.config.user,
         `-p${this.config.password}`,
         targetDatabase
-      ]);
+      ], {
+        stdio: ['pipe', 'inherit', 'pipe']
+      });
 
-      const input = fs.createReadStream(backupPath);
+      const input = fs.createReadStream(backupPath, {
+        highWaterMark: 64 * 1024 // 64KB read buffer
+      });
       let error = '';
       let isResolved = false;
+      
+      // Set a timeout for the entire operation (30 minutes)
+      const timeoutId = setTimeout(() => {
+        if (!isResolved) {
+          isResolved = true;
+          input.destroy();
+          gunzip.destroy();
+          mysql.kill('SIGTERM');
+          reject(new Error('Restore operation timed out after 30 minutes'));
+        }
+      }, 30 * 60 * 1000);
 
       const handleError = (err: Error, source: string) => {
         if (!isResolved) {
           isResolved = true;
+          clearTimeout(timeoutId);
+          input.destroy();
+          gunzip.destroy();
+          mysql.kill('SIGTERM');
           reject(new Error(`${source}: ${err.message}`));
         }
       };
@@ -144,6 +167,7 @@ export class MySQLManager {
       const handleSuccess = () => {
         if (!isResolved) {
           isResolved = true;
+          clearTimeout(timeoutId);
           if (progressCallback) {
             progressCallback({ loaded: totalSize, total: totalSize, percentage: 100 });
           }
@@ -151,16 +175,21 @@ export class MySQLManager {
         }
       };
 
-      // Track progress if callback provided
+      // Track progress if callback provided - throttle updates for better performance
       if (progressCallback) {
         input.on('data', (chunk) => {
           processedBytes += chunk.length;
-          const percentage = (processedBytes / totalSize) * 100;
-          progressCallback({ 
-            loaded: processedBytes, 
-            total: totalSize, 
-            percentage 
-          });
+          const now = Date.now();
+          // Only update progress every 100ms to avoid overwhelming the UI
+          if (now - lastProgressUpdate > 100) {
+            const percentage = (processedBytes / totalSize) * 100;
+            progressCallback({ 
+              loaded: processedBytes, 
+              total: totalSize, 
+              percentage 
+            });
+            lastProgressUpdate = now;
+          }
         });
       }
 
@@ -177,14 +206,7 @@ export class MySQLManager {
         if (code !== 0) {
           handleError(new Error(`mysql exited with code ${code}: ${error}`), 'MySQL process failed');
         } else {
-          // Ensure all streams are properly closed before resolving
-          input.destroy();
-          gunzip.destroy();
-
-          // Small delay to ensure all resources are properly released
-          setTimeout(() => {
-            handleSuccess();
-          }, 100);
+          handleSuccess();
         }
       });
 
@@ -210,24 +232,16 @@ export class MySQLManager {
         handleError(err, 'Failed to read backup file');
       });
 
-      // Handle pipe errors in the stream pipeline
-      const pipeline = input.pipe(gunzip);
-
-      pipeline.on('error', (err) => {
-        handleError(err, 'Pipeline error');
+      // Use Node.js pipeline for better stream management and error handling
+      const { pipeline } = require('stream/promises');
+      
+      pipeline(
+        input,
+        gunzip,
+        mysql.stdin
+      ).catch((err) => {
+        handleError(err, 'Stream pipeline error');
       });
-
-      // Set up the final pipe to mysql with error handling
-      pipeline.pipe(mysql.stdin, { end: true });
-
-      // Handle backpressure by pausing/resuming the input stream
-      mysql.stdin.on('drain', () => {
-        input.resume();
-      });
-
-      if (mysql.stdin.writableHighWaterMark && mysql.stdin.writableLength > mysql.stdin.writableHighWaterMark) {
-        input.pause();
-      }
     });
   }
 
