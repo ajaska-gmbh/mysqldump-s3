@@ -2,9 +2,9 @@ import {
   S3Client, 
   GetObjectCommand, 
   ListObjectsV2Command,
-  HeadObjectCommand 
+  HeadObjectCommand,
+  PutObjectCommand 
 } from '@aws-sdk/client-s3';
-import { Upload } from '@aws-sdk/lib-storage';
 import * as fs from 'fs';
 import { S3Config, BackupInfo, ProgressCallback } from '../types';
 
@@ -39,35 +39,28 @@ export class S3Manager {
 
     const stats = fs.statSync(filePath);
     const fileSize = stats.size;
-    const fileStream = fs.createReadStream(filePath);
+    
+    // Read the entire file into memory
+    const fileContent = fs.readFileSync(filePath);
 
     try {
-      const upload = new Upload({
-        client: this.s3Client,
-        params: {
-          Bucket: this.config.bucket,
-          Key: key,
-          Body: fileStream,
-          ContentType: 'application/gzip'
-        }
-      });
-
-      // Track upload progress
+      // Report initial progress
       if (progressCallback) {
-        upload.on('httpUploadProgress', (progress) => {
-          const loaded = progress.loaded || 0;
-          const total = progress.total || fileSize;
-          const percentage = (loaded / total) * 100;
-          progressCallback({
-            loaded,
-            total,
-            percentage
-          });
-        });
+        progressCallback({ loaded: 0, total: fileSize, percentage: 0 });
       }
 
-      await upload.done();
+      // Upload using PutObjectCommand
+      const uploadCommand = new PutObjectCommand({
+        Bucket: this.config.bucket,
+        Key: key,
+        Body: fileContent,
+        ContentType: 'application/gzip',
+        ContentLength: fileSize
+      });
+
+      await this.s3Client.send(uploadCommand);
       
+      // Report completion
       if (progressCallback) {
         progressCallback({ loaded: fileSize, total: fileSize, percentage: 100 });
       }

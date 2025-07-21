@@ -44,10 +44,9 @@ export async function backupCommand(options: BackupOptions): Promise<void> {
     try {
       // Create backup
       console.log(chalk.blue('ℹ Creating database backup...'));
-      const backupProgress = progressTracker.createProgressBar('Creating backup');
+      const backupProgress = progressTracker.createStreamProgressBar('Creating backup');
 
       await mysqlManager.createBackup(tempBackupPath, backupProgress);
-      progressTracker.stop();
       console.log(chalk.green('✓ Database backup created'));
 
       // Get backup file size

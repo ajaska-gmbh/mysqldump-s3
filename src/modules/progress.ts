@@ -20,7 +20,14 @@ export class ProgressTracker {
       barIncompleteChar: '\u2591',
       hideCursor: true,
       etaBuffer: this.maxRateHistory,
-      etaAsynchronousUpdate: true
+      etaAsynchronousUpdate: true,
+      formatValue: (value) => {
+        // If we're tracking MB (for streaming), format it nicely
+        if (!total && value > 0) {
+          return `${value}MB`;
+        }
+        return value.toString();
+      }
     });
 
     if (total) {
@@ -61,6 +68,17 @@ export class ProgressTracker {
       } else if (progress.percentage !== undefined) {
         newValue = progress.percentage;
         newTotal = this.totalValue; // Keep existing total
+      } else if (progress.loaded !== undefined) {
+        // Handle streaming progress where total is unknown
+        // Convert to MB for better visualization
+        const loadedMB = Math.round(progress.loaded / (1024 * 1024));
+        // Update both value and total to show progress
+        newValue = loadedMB;
+        newTotal = Math.max(loadedMB + 1, this.totalValue); // Always keep total ahead
+        if (newTotal !== this.totalValue) {
+          this.totalValue = newTotal;
+          this.progressBar.setTotal(newTotal);
+        }
       } else {
         return;
       }
