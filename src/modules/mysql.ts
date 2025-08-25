@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import { createConnection } from 'mysql2/promise';
 import * as zlib from 'zlib';
 import * as fs from 'fs';
+import { pipeline } from 'stream/promises';
 import { DatabaseConfig, ProgressCallback } from '../types';
 
 export class MySQLManager {
@@ -239,7 +240,7 @@ export class MySQLManager {
         input,
         gunzip,
         mysql.stdin
-      ).catch((err) => {
+      ).catch((err: Error) => {
         handleError(err, 'Stream pipeline error');
       });
     });
