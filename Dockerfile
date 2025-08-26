@@ -1,12 +1,13 @@
 FROM node:20-slim
 
-# Install required system packages
 RUN apt-get update && apt-get install -y \
     default-mysql-client \
     awscli \
     ca-certificates \
     wget \
     tar \
+    procps \
+    pv \
     --no-install-recommends && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
