@@ -19,17 +19,32 @@ jobs:
   test:
     name: Run Complete Test Suite
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
       - name: Install Docker Compose
         run: |
-          # Install Docker Compose v2 as a Docker plugin
-          sudo apt-get update
-          sudo apt-get install -y docker-compose-plugin
-          # Create symlink for backward compatibility
-          sudo ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+          # Docker Compose v2 is already installed on GitHub Actions Ubuntu runners
+          # Verify Docker and Docker Compose are available
+          docker --version
+          docker compose version
+          # Create symlink for backward compatibility if needed
+          if ! command -v docker-compose &> /dev/null; then
+            sudo ln -sf $(which docker) /usr/local/bin/docker
+            # Use docker compose (v2) instead of docker-compose
+            echo '#!/bin/bash' | sudo tee /usr/local/bin/docker-compose > /dev/null
+            echo 'docker compose "$@"' | sudo tee -a /usr/local/bin/docker-compose > /dev/null
+            sudo chmod +x /usr/local/bin/docker-compose
+          fi
+          docker-compose version
 
       - name: Run integration tests
         run: |

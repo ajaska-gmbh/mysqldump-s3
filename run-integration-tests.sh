@@ -34,7 +34,7 @@ cleanup() {
     fi
     
     echo -e "\n${BLUE}Cleaning up test environment...${NC}"
-    ${DOCKER_COMPOSE_CMD:-${DOCKER_COMPOSE_CMD:-docker-compose}} -f $COMPOSE_FILE down -v --remove-orphans 2>/dev/null || true
+    ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE down -v --remove-orphans 2>/dev/null || true
     
     # Remove test reports if they exist
     rm -rf test-reports/ 2>/dev/null || true
@@ -126,7 +126,7 @@ check_prerequisites() {
         # Check if there are existing test containers
         if docker ps -a | grep -q "mysqldump-s3-test"; then
             echo -e "${BLUE}Found existing test containers. Cleaning up...${NC}"
-            ${DOCKER_COMPOSE_CMD:-${DOCKER_COMPOSE_CMD:-docker-compose}} -f $COMPOSE_FILE down -v 2>/dev/null || true
+            ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE down -v 2>/dev/null || true
             sleep 2
             
             # Re-check ports
