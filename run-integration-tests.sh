@@ -17,6 +17,7 @@ COMPOSE_FILE="docker-compose.test.yml"
 TEST_TIMEOUT=300 # 5 minutes timeout
 CLEANUP_ON_FAILURE=${CLEANUP_ON_FAILURE:-true}
 VERBOSE=${VERBOSE:-false}
+DOCKER_COMPOSE_CMD=""  # Will be set during prerequisite check
 
 # Trap to ensure cleanup on script exit
 cleanup() {
@@ -27,13 +28,13 @@ cleanup() {
         
         if [ "$CLEANUP_ON_FAILURE" = "false" ]; then
             echo -e "${YELLOW}Keeping containers running for debugging (CLEANUP_ON_FAILURE=false)${NC}"
-            echo -e "${YELLOW}Run 'docker-compose -f $COMPOSE_FILE down -v' to clean up manually${NC}"
+            echo -e "${YELLOW}Run '${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE down -v' to clean up manually${NC}"
             return
         fi
     fi
     
     echo -e "\n${BLUE}Cleaning up test environment...${NC}"
-    docker-compose -f $COMPOSE_FILE down -v --remove-orphans 2>/dev/null || true
+    ${DOCKER_COMPOSE_CMD:-${DOCKER_COMPOSE_CMD:-docker-compose}} -f $COMPOSE_FILE down -v --remove-orphans 2>/dev/null || true
     
     # Remove test reports if they exist
     rm -rf test-reports/ 2>/dev/null || true
@@ -63,11 +64,15 @@ check_prerequisites() {
         echo -e "${GREEN}✓${NC} Docker installed: $(docker --version)"
     fi
     
-    # Check Docker Compose
-    if ! command -v docker-compose &> /dev/null; then
-        missing_deps+=("docker-compose")
+    # Check Docker Compose (v1 or v2)
+    if command -v ${DOCKER_COMPOSE_CMD:-docker-compose} &> /dev/null; then
+        DOCKER_COMPOSE_CMD="${DOCKER_COMPOSE_CMD:-docker-compose}"
+        echo -e "${GREEN}✓${NC} Docker Compose installed: $(${DOCKER_COMPOSE_CMD:-docker-compose} --version)"
+    elif docker compose version &> /dev/null; then
+        DOCKER_COMPOSE_CMD="docker compose"
+        echo -e "${GREEN}✓${NC} Docker Compose installed: $(docker compose version)"
     else
-        echo -e "${GREEN}✓${NC} Docker Compose installed: $(docker-compose --version)"
+        missing_deps+=("${DOCKER_COMPOSE_CMD:-docker-compose}")
     fi
     
     # Check Node.js
@@ -121,7 +126,7 @@ check_prerequisites() {
         # Check if there are existing test containers
         if docker ps -a | grep -q "mysqldump-s3-test"; then
             echo -e "${BLUE}Found existing test containers. Cleaning up...${NC}"
-            docker-compose -f $COMPOSE_FILE down -v 2>/dev/null || true
+            ${DOCKER_COMPOSE_CMD:-${DOCKER_COMPOSE_CMD:-docker-compose}} -f $COMPOSE_FILE down -v 2>/dev/null || true
             sleep 2
             
             # Re-check ports
@@ -198,17 +203,17 @@ start_test_environment() {
     print_header "Starting Test Environment"
     
     echo "Pulling required Docker images..."
-    docker-compose -f $COMPOSE_FILE pull
+    ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE pull
     
     echo "Starting MySQL and MinIO services..."
-    docker-compose -f $COMPOSE_FILE up -d mysql minio
+    ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE up -d mysql minio
     
     echo "Waiting for MySQL to be healthy..."
     local retries=0
     local max_retries=30
     
     while [ $retries -lt $max_retries ]; do
-        if docker-compose -f $COMPOSE_FILE exec -T mysql mysqladmin ping -h localhost -u root -ptest_password &>/dev/null; then
+        if ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE exec -T mysql mysqladmin ping -h localhost -u root -ptest_password &>/dev/null; then
             echo -e "${GREEN}✓ MySQL is ready${NC}"
             break
         fi
@@ -240,7 +245,7 @@ start_test_environment() {
     fi
     
     echo "Creating S3 test bucket..."
-    docker-compose -f $COMPOSE_FILE run --rm createbucket
+    ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE run --rm createbucket
     echo -e "${GREEN}✓ Test environment is ready${NC}"
 }
 
@@ -249,7 +254,7 @@ run_integration_tests() {
     print_header "Running Integration Tests"
     
     echo "Building test container..."
-    docker-compose -f $COMPOSE_FILE build app-test
+    ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE build app-test
     
     echo -e "\n${YELLOW}Running integration tests (this may take a few minutes)...${NC}\n"
     
@@ -257,7 +262,7 @@ run_integration_tests() {
     mkdir -p test-reports
     
     # Run tests with timeout - using the new CLI in the container
-    if timeout $TEST_TIMEOUT docker-compose -f $COMPOSE_FILE run --rm \
+    if timeout $TEST_TIMEOUT ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE run --rm \
         app-test mysqldump-s3 --help > /dev/null 2>&1; then
         echo -e "${GREEN}✓ CLI is working in container${NC}"
     else
@@ -266,7 +271,7 @@ run_integration_tests() {
     fi
     
     # Run integration tests with proper configuration (disable TTY to avoid terminal issues)
-    if timeout $TEST_TIMEOUT docker-compose -f $COMPOSE_FILE run --rm -T \
+    if timeout $TEST_TIMEOUT ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE run --rm -T \
         app-test npx jest --config=jest.integration.config.js --forceExit; then
         echo -e "\n${GREEN}✓ Integration tests passed${NC}"
         return 0
@@ -312,7 +317,7 @@ show_test_results() {
     # Show container logs if verbose mode
     if [ "$VERBOSE" = "true" ]; then
         echo -e "\n${BLUE}Container Logs:${NC}"
-        docker-compose -f $COMPOSE_FILE logs --tail=50
+        ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE logs --tail=50
     fi
 }
 
@@ -323,7 +328,7 @@ test_database_creation() {
     echo "Creating test data in testdb..."
     # Wait for MySQL socket to be ready and use TCP connection
     sleep 5
-    docker-compose -f $COMPOSE_FILE exec -T mysql sh -c 'mysql -h 127.0.0.1 -P 3306 -u testuser -ptestpass testdb' <<EOF
+    ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE exec -T mysql sh -c 'mysql -h 127.0.0.1 -P 3306 -u testuser -ptestpass testdb' <<EOF
 CREATE TABLE IF NOT EXISTS test_table (id INT PRIMARY KEY, name VARCHAR(100));
 TRUNCATE TABLE test_table;
 INSERT INTO test_table VALUES (1, 'Test Data');
@@ -334,7 +339,7 @@ EOF
     BACKUP_KEY="auto-create-test-backup.sql.gz"
     
     # Run backup with custom name - redirect stderr to stdout to capture all output
-    if docker-compose -f $COMPOSE_FILE run --rm -T \
+    if ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE run --rm -T \
         -e DB_HOST=mysql \
         -e DB_PORT=3306 \
         -e DB_USER=testuser \
@@ -355,7 +360,7 @@ EOF
     if [ -z "$BACKUP_KEY" ]; then
         echo -e "${RED}✗ Could not extract backup key from output${NC}"
         echo "Trying to list backups..."
-        docker-compose -f $COMPOSE_FILE run --rm \
+        ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE run --rm \
             -e DB_HOST=mysql \
             -e DB_PORT=3306 \
             -e DB_USER=testuser \
@@ -372,7 +377,7 @@ EOF
     echo "Testing restore to non-existent database..."
     
     # Restore to new database - don't set DB_NAME since we want to target a different database
-    if docker-compose -f $COMPOSE_FILE run --rm -T \
+    if ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE run --rm -T \
         -e DB_HOST=mysql \
         -e DB_PORT=3306 \
         -e DB_USER=testuser \
@@ -390,14 +395,14 @@ EOF
     fi
     
     # Verify the database was created
-    local db_exists=$(docker-compose -f $COMPOSE_FILE exec -T mysql \
+    local db_exists=$(${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE exec -T mysql \
         sh -c 'mysql -h 127.0.0.1 -P 3306 -u root -ptest_password -e "SHOW DATABASES LIKE '"'"'new_test_db'"'"';"' 2>/dev/null | grep -c new_test_db || true)
     
     if [ "$db_exists" -gt 0 ]; then
         echo -e "${GREEN}✓ Database auto-creation successful${NC}"
         
         # Verify data was restored
-        local data_count=$(docker-compose -f $COMPOSE_FILE exec -T mysql \
+        local data_count=$(${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE exec -T mysql \
             sh -c 'mysql -h 127.0.0.1 -P 3306 -u root -ptest_password -e "SELECT COUNT(*) FROM new_test_db.test_table;"' 2>/dev/null | tail -1)
         
         if [ "$data_count" = "1" ]; then
@@ -407,7 +412,7 @@ EOF
         fi
         
         # Verify the actual data content
-        local test_data=$(docker-compose -f $COMPOSE_FILE exec -T mysql \
+        local test_data=$(${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE exec -T mysql \
             sh -c 'mysql -h 127.0.0.1 -P 3306 -u root -ptest_password -e "SELECT name FROM new_test_db.test_table WHERE id=1;"' 2>/dev/null | tail -1)
         if [ "$test_data" = "Test Data" ]; then
             echo -e "${GREEN}✓ Data integrity verified${NC}"
