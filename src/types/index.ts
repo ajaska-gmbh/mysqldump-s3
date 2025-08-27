@@ -4,6 +4,7 @@ export interface DatabaseConfig {
   user: string;
   password: string;
   database?: string;
+  schemas?: string[];
 }
 
 export interface S3Config {
@@ -32,6 +33,7 @@ export interface BackupOptions {
   configFile?: string;
   output?: string;
   verbose?: boolean;
+  schemas?: string;
 }
 
 export interface ListOptions {

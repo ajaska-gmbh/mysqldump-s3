@@ -2,7 +2,6 @@ import { spawn } from 'child_process';
 import { createConnection } from 'mysql2/promise';
 import * as zlib from 'zlib';
 import * as fs from 'fs';
-import { pipeline } from 'stream/promises';
 import { DatabaseConfig, ProgressCallback } from '../types';
 
 export class MySQLManager {
@@ -53,7 +52,9 @@ export class MySQLManager {
         '--lock-tables=false'
       ];
 
-      if (this.config.database) {
+      if (this.config.schemas && this.config.schemas.length > 0) {
+        args.push('--databases', ...this.config.schemas);
+      } else if (this.config.database) {
         args.push(this.config.database);
       } else {
         args.push('--all-databases');
@@ -234,14 +235,14 @@ export class MySQLManager {
       });
 
       // Use Node.js pipeline for better stream management and error handling
-      const { pipeline } = require('stream/promises');
-      
-      pipeline(
-        input,
-        gunzip,
-        mysql.stdin
-      ).catch((err: Error) => {
-        handleError(err, 'Stream pipeline error');
+      import('stream/promises').then(({ pipeline }) => {
+        pipeline(
+          input,
+          gunzip,
+          mysql.stdin
+        ).catch((err: Error) => {
+          handleError(err, 'Stream pipeline error');
+        });
       });
     });
   }

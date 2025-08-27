@@ -14,12 +14,20 @@ export async function backupCommand(options: BackupOptions): Promise<void> {
     const configManager = ConfigManager.getInstance();
     const config = configManager.loadConfig(options.configFile, { requireDatabase: true, requireS3: true });
 
+    // Override schemas from CLI if provided
+    if (options.schemas) {
+      config.database.schemas = options.schemas.split(',').map(s => s.trim());
+    }
+
     if (options.verbose) {
       console.log(chalk.blue('ℹ Configuration loaded successfully'));
       console.log(chalk.gray(`Database: ${config.database.host}:${config.database.port}`));
       console.log(chalk.gray(`S3 Bucket: ${config.s3.bucket}`));
       if (config.s3.endpointUrl) {
         console.log(chalk.gray(`S3 Endpoint: ${config.s3.endpointUrl}`));
+      }
+      if (config.database.schemas) {
+        console.log(chalk.gray(`Schemas: ${config.database.schemas.join(', ')}`));
       }
     }
 
@@ -36,7 +44,7 @@ export async function backupCommand(options: BackupOptions): Promise<void> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const s3Key = config.s3.key 
       ? `${config.s3.key}-${timestamp}.sql.gz`
-      : configManager.generateS3Key(config.database.database);
+      : configManager.generateS3Key(config.database.database, config.database.schemas);
 
     const tempDir = os.tmpdir();
     const tempBackupPath = path.join(tempDir, `backup-${Date.now()}.sql.gz`);
@@ -71,7 +79,15 @@ export async function backupCommand(options: BackupOptions): Promise<void> {
       console.log(chalk.green.bold('🎉 Backup completed successfully!'));
       console.log('');
       console.log(`${chalk.cyan('Backup details:')}`);
-      console.log(`  Database: ${config.database.database || 'all databases'}`);
+      
+      let backupScope = 'all databases';
+      if (config.database.schemas && config.database.schemas.length > 0) {
+        backupScope = `schemas: ${config.database.schemas.join(', ')}`;
+      } else if (config.database.database) {
+        backupScope = config.database.database;
+      }
+      
+      console.log(`  Database: ${backupScope}`);
       console.log(`  Size: ${fileSize}`);
       console.log(`  Location: s3://${config.s3.bucket}/${s3Key}`);
       console.log(`  Created: ${new Date().toLocaleString()}`);

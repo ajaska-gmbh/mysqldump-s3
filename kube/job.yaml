@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mysql-backup-restore-shell
-  namespace: tracker-ch
+  namespace: tracker-ch-ajaska
 spec:
   replicas: 1
   selector:
@@ -26,9 +26,11 @@ spec:
             - name: DB_PORT
               value: "3306"
             - name: DB_USER
-              value: "tracker-ch"stream the upload to s23
+              value: "tracker-ch"
+            - name: RESTORE
+              value: "true"
             - name: DB_PASSWORD
-              value: "j6JPnJRBWyOwucmmvzi5"
+              value: "q3AOkiUVXjkXjDAAKIQqqIGLDmfoIFyP33De1jsxlM8Rxf3DR5"
             - name: AWS_ACCESS_KEY_ID
               value: "f907d333c6a1487e91ee64c3da1409b9"
             - name: AWS_SECRET_ACCESS_KEY

@@ -56,6 +56,7 @@ export class ConfigManager {
     if (process.env.DB_USER) database.user = process.env.DB_USER;
     if (process.env.DB_PASSWORD) database.password = process.env.DB_PASSWORD;
     if (process.env.DB_NAME) database.database = process.env.DB_NAME;
+    if (process.env.DB_SCHEMAS) database.schemas = process.env.DB_SCHEMAS.split(',').map(s => s.trim());
 
     // S3 configuration
     if (process.env.AWS_ACCESS_KEY_ID) s3.accessKeyId = process.env.AWS_ACCESS_KEY_ID;
@@ -78,7 +79,8 @@ export class ConfigManager {
         port: envConfig.database?.port || fileConfig.database?.port || 3306,
         user: envConfig.database?.user || fileConfig.database?.user || '',
         password: envConfig.database?.password || fileConfig.database?.password || '',
-        database: envConfig.database?.database || fileConfig.database?.database
+        database: envConfig.database?.database || fileConfig.database?.database,
+        schemas: envConfig.database?.schemas || fileConfig.database?.schemas
       },
       s3: {
         accessKeyId: envConfig.s3?.accessKeyId || fileConfig.s3?.accessKeyId || '',
@@ -118,9 +120,16 @@ export class ConfigManager {
     }
   }
 
-  public generateS3Key(database?: string): string {
+  public generateS3Key(database?: string, schemas?: string[]): string {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const prefix = database || 'all';
+    let prefix = 'all';
+    
+    if (schemas && schemas.length > 0) {
+      prefix = schemas.join('-');
+    } else if (database) {
+      prefix = database;
+    }
+    
     return `${prefix}-${timestamp}.sql.gz`;
   }
 
