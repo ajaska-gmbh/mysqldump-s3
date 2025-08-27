@@ -155,8 +155,16 @@ export class MySQLManager {
         }
       }, 30 * 60 * 1000);
 
-      const handleError = (err: Error, source: string) => {
+      const handleError = (err: Error & { code?: string }, source: string) => {
         if (!isResolved) {
+          // Special handling for EPIPE errors
+          if (err.code === 'EPIPE') {
+            // EPIPE means the mysql process closed its stdin
+            // Wait for the mysql process to exit and report its exit code
+            // Don't reject immediately as this might be normal termination
+            return;
+          }
+          
           isResolved = true;
           clearTimeout(timeoutId);
           input.destroy();
@@ -201,48 +209,49 @@ export class MySQLManager {
       });
 
       mysql.on('error', (err) => {
-        handleError(err, 'Failed to start mysql');
+        handleError(err as Error & { code?: string }, 'Failed to start mysql');
       });
 
       mysql.on('close', (code) => {
-        if (code !== 0) {
-          handleError(new Error(`mysql exited with code ${code}: ${error}`), 'MySQL process failed');
-        } else {
-          handleSuccess();
+        if (!isResolved) {
+          if (code !== 0) {
+            isResolved = true;
+            clearTimeout(timeoutId);
+            reject(new Error(`MySQL process failed: mysql exited with code ${code}: ${error}`));
+          } else {
+            handleSuccess();
+          }
         }
       });
 
       // Handle mysql stdin pipe errors (EPIPE protection)
       mysql.stdin.on('error', (err: Error & { code?: string }) => {
-        // EPIPE error typically means the mysql process has closed
-        // Check if it's an expected closure or an error
-        if (err.code === 'EPIPE') {
-          // Don't immediately reject, wait for mysql process to close
-          // The mysql 'close' event will handle the final resolution
-          return;
-        }
         handleError(err, 'MySQL stdin pipe error');
       });
 
       // Handle gunzip errors
       gunzip.on('error', (err) => {
-        handleError(err, 'Decompression failed');
+        handleError(err as Error & { code?: string }, 'Decompression failed');
       });
 
       // Handle input file errors
       input.on('error', (err) => {
-        handleError(err, 'Failed to read backup file');
+        handleError(err as Error & { code?: string }, 'Failed to read backup file');
       });
 
-      // Use Node.js pipeline for better stream management and error handling
-      import('stream/promises').then(({ pipeline }) => {
-        pipeline(
-          input,
-          gunzip,
-          mysql.stdin
-        ).catch((err: Error) => {
-          handleError(err, 'Stream pipeline error');
-        });
+      // Pipe the streams manually with better error handling
+      input.pipe(gunzip).on('error', (err: Error & { code?: string }) => {
+        handleError(err, 'Gunzip pipe error');
+      });
+
+      gunzip.pipe(mysql.stdin).on('error', (err: Error & { code?: string }) => {
+        handleError(err, 'MySQL stdin pipe error');
+      });
+
+      // Handle end of gunzip stream
+      gunzip.on('end', () => {
+        // Close mysql stdin when decompression is complete
+        mysql.stdin.end();
       });
     });
   }
