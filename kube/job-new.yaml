@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-backup-restore-shell
+  namespace: publishing-v2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-backup-restore-shell
+  template:
+    metadata:
+      labels:
+        app: mysql-backup-restore-shell
+    spec:
+      imagePullSecrets:
+        - name: ghcr-login-secret
+      containers:
+        - name: mysql-backup
+          imagePullPolicy: Always
+          image: ghcr.io/ajaska-gmbh/mysqldump-s3:latest
+          command: ["/bin/bash", "-c", "while true; do sleep 30; done"]
+          env:
+            - name: DB_HOST
+              value: "publishing-v2-mysql"
+            - name: DB_PORT
+              value: "3306"
+            - name: DB_USER
+              value: "root"
+            - name: RESTORE
+              value: "true"
+            - name: DB_PASSWORD
+              value: "qTjnREF6YMloKzmgkxggos3MiEXesXGozlbJNumGJ"
+            - name: AWS_ACCESS_KEY_ID
+              value: "f907d333c6a1487e91ee64c3da1409b9"
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "0c757b10e18b41fba0b5625b151fdf2f"
+            - name: AWS_DEFAULT_REGION
+              value: "de"
+            - name: S3_BUCKET
+              value: "mysql-dump-backups"
+            - name: S3_KEY
+              value: "tracker-ch-migration"
+            - name: S3_ENDPOINT_URL
+              value: "https://s3.de.io.cloud.ovh.net"
+          volumeMounts:
+            - name: backup-storage
+              mountPath: /tmp/backup
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2"
+      volumes:
+        - name: backup-storage
+          persistentVolumeClaim:
+            claimName: mysql-backup-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-backup-pvc
+  namespace: publishing-v2
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 600Gi
+  storageClassName: csi-cinder-high-speed-gen2

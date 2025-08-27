@@ -118,7 +118,12 @@ export class S3Manager {
           reject(new Error(`Failed to download from S3: ${error}`));
         });
 
-        readableStream.on('end', () => {
+        writeStream.on('error', (error) => {
+          reject(new Error(`Failed to write file: ${error}`));
+        });
+
+        // Wait for the writeStream to finish, not the readableStream
+        writeStream.on('finish', () => {
           if (progressCallback) {
             progressCallback({ 
               loaded: downloadedBytes, 
@@ -127,10 +132,6 @@ export class S3Manager {
             });
           }
           resolve();
-        });
-
-        writeStream.on('error', (error) => {
-          reject(new Error(`Failed to write file: ${error}`));
         });
 
         readableStream.pipe(writeStream);

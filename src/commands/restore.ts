@@ -155,9 +155,22 @@ export async function restoreCommand(options: RestoreOptions): Promise<void> {
     }
 
     // Check if target database exists
-    const dbExists = await mysqlManager.databaseExists(targetDatabase);
-    if (!dbExists && options.verbose) {
-      console.log(chalk.yellow(`⚠ Target database '${targetDatabase}' does not exist. It will be created during restore.`));
+    try {
+      const dbExists = await mysqlManager.databaseExists(targetDatabase);
+      if (!dbExists) {
+        console.log(chalk.blue(`ℹ Creating database '${targetDatabase}'...`));
+        await mysqlManager.createDatabase(targetDatabase);
+        console.log(chalk.green(`✓ Database '${targetDatabase}' created`));
+      } else if (options.verbose) {
+        console.log(chalk.gray(`Database '${targetDatabase}' already exists`));
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(chalk.red(`✗ Failed to check/create database: ${errorMessage}`));
+      if (options.verbose && error instanceof Error && error.stack) {
+        console.error(chalk.gray(error.stack));
+      }
+      throw error;
     }
 
     const tempDir = os.tmpdir();

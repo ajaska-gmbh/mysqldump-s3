@@ -5,6 +5,7 @@ import * as zlib from 'zlib';
 import * as path from 'path';
 import * as os from 'os';
 import { PassThrough } from 'stream';
+import { createConnection } from 'mysql2/promise';
 
 jest.mock('child_process');
 jest.mock('mysql2/promise');
@@ -22,6 +23,14 @@ describe('MySQLManager restore with EPIPE handling', () => {
   beforeEach(() => {
     mysqlManager = new MySQLManager(mockConfig);
     jest.clearAllMocks();
+    
+    // Mock createConnection for all tests by default
+    const mockConnection = {
+      execute: jest.fn().mockResolvedValue([[{ SCHEMA_NAME: 'testdb' }]]),
+      end: jest.fn().mockResolvedValue(undefined),
+      ping: jest.fn().mockResolvedValue(undefined)
+    };
+    (createConnection as jest.Mock).mockResolvedValue(mockConnection);
   });
 
   afterEach(() => {
@@ -225,5 +234,140 @@ describe('MySQLManager restore with EPIPE handling', () => {
         fs.unlinkSync(tempFile);
       }
     }
+  });
+
+  describe('Database creation during restore', () => {
+    it('should create database if it does not exist before restore', async () => {
+      const tempDir = os.tmpdir();
+      const tempFile = path.join(tempDir, `test-backup-${Date.now()}.sql.gz`);
+      
+      // Create a test backup file
+      const testData = 'CREATE TABLE IF NOT EXISTS test (id INT);\nINSERT INTO test VALUES (1);\n';
+      const compressed = zlib.gzipSync(Buffer.from(testData));
+      fs.writeFileSync(tempFile, compressed);
+
+      try {
+        // Mock the database existence check to return false
+        const mockConnection = {
+          execute: jest.fn().mockResolvedValue([[]]),
+          end: jest.fn().mockResolvedValue(undefined),
+          ping: jest.fn().mockResolvedValue(undefined)
+        };
+        
+        (createConnection as jest.Mock).mockResolvedValue(mockConnection);
+
+        // Mock databaseExists to return false initially, then true after creation
+        const databaseExistsMock = jest.spyOn(mysqlManager, 'databaseExists');
+        databaseExistsMock.mockResolvedValueOnce(false);  // First check: doesn't exist
+        databaseExistsMock.mockResolvedValueOnce(true);   // Second check: after creation, exists
+        
+        // Mock createDatabase to succeed
+        jest.spyOn(mysqlManager, 'createDatabase').mockResolvedValue(undefined);
+
+        // Create a mock stdin stream
+        const mockStdin = new PassThrough();
+        
+        // Mock spawn to simulate successful mysql process
+        const mockMysqlProcess = {
+          stdin: mockStdin,
+          stderr: new PassThrough(),
+          on: jest.fn(),
+          kill: jest.fn()
+        };
+
+        mockMysqlProcess.on.mockImplementation((event, handler) => {
+          if (event === 'close') {
+            setTimeout(() => handler(0), 100);
+          }
+          return mockMysqlProcess;
+        });
+
+        (spawn as jest.Mock).mockReturnValue(mockMysqlProcess);
+
+        // This should create the database then restore successfully
+        await expect(mysqlManager.restoreBackup(tempFile, 'newdb'))
+          .resolves.toBeUndefined();
+        
+        // Verify database creation was attempted
+        expect(mysqlManager.createDatabase).toHaveBeenCalledWith('newdb');
+        
+        // Verify the restore was attempted after database creation
+        expect(spawn).toHaveBeenCalledWith('mysql', [
+          '-h', 'localhost',
+          '-P', '3306',
+          '-u', 'test',
+          '-ptest',
+          'newdb'
+        ], { stdio: ['pipe', 'inherit', 'pipe'] });
+
+      } finally {
+        // Clean up temp file
+        if (fs.existsSync(tempFile)) {
+          fs.unlinkSync(tempFile);
+        }
+        jest.restoreAllMocks();
+      }
+    });
+
+    it('should not create database if it already exists', async () => {
+      const tempDir = os.tmpdir();
+      const tempFile = path.join(tempDir, `test-backup-${Date.now()}.sql.gz`);
+      
+      // Create a test backup file
+      const testData = 'CREATE TABLE IF NOT EXISTS test (id INT);\n';
+      const compressed = zlib.gzipSync(Buffer.from(testData));
+      fs.writeFileSync(tempFile, compressed);
+
+      try {
+        // Mock the database existence check to return true
+        const mockConnection = {
+          execute: jest.fn().mockResolvedValue([[{ SCHEMA_NAME: 'existingdb' }]]),
+          end: jest.fn().mockResolvedValue(undefined),
+          ping: jest.fn().mockResolvedValue(undefined)
+        };
+        
+        (createConnection as jest.Mock).mockResolvedValue(mockConnection);
+
+        // Mock databaseExists to return true
+        jest.spyOn(mysqlManager, 'databaseExists').mockResolvedValue(true);
+        
+        // Mock createDatabase - should not be called
+        jest.spyOn(mysqlManager, 'createDatabase').mockResolvedValue(undefined);
+
+        // Create a mock stdin stream
+        const mockStdin = new PassThrough();
+        
+        // Mock spawn to simulate successful mysql process
+        const mockMysqlProcess = {
+          stdin: mockStdin,
+          stderr: new PassThrough(),
+          on: jest.fn(),
+          kill: jest.fn()
+        };
+
+        mockMysqlProcess.on.mockImplementation((event, handler) => {
+          if (event === 'close') {
+            setTimeout(() => handler(0), 100);
+          }
+          return mockMysqlProcess;
+        });
+
+        (spawn as jest.Mock).mockReturnValue(mockMysqlProcess);
+
+        // This should restore without creating database
+        await expect(mysqlManager.restoreBackup(tempFile, 'existingdb'))
+          .resolves.toBeUndefined();
+        
+        // Verify database creation was NOT attempted
+        expect(mysqlManager.createDatabase).not.toHaveBeenCalled();
+
+      } finally {
+        // Clean up temp file
+        if (fs.existsSync(tempFile)) {
+          fs.unlinkSync(tempFile);
+        }
+        jest.restoreAllMocks();
+      }
+    });
   });
 });

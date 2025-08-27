@@ -41,10 +41,19 @@ export async function backupCommand(options: BackupOptions): Promise<void> {
     console.log(chalk.green('✓ Database connection successful'));
 
     // Generate backup file paths
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const s3Key = config.s3.key 
-      ? `${config.s3.key}-${timestamp}.sql.gz`
-      : configManager.generateS3Key(config.database.database, config.database.schemas);
+    let s3Key: string;
+    
+    if (options.name) {
+      // Use custom backup name provided via CLI
+      s3Key = `${options.name}.sql.gz`;
+    } else if (config.s3.key) {
+      // Use key from config with timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      s3Key = `${config.s3.key}-${timestamp}.sql.gz`;
+    } else {
+      // Auto-generate key based on database/schemas
+      s3Key = configManager.generateS3Key(config.database.database, config.database.schemas);
+    }
 
     const tempDir = os.tmpdir();
     const tempBackupPath = path.join(tempDir, `backup-${Date.now()}.sql.gz`);

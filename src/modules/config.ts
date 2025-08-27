@@ -6,6 +6,7 @@ import { AppConfig, DatabaseConfig, S3Config } from '../types';
 export class ConfigManager {
   private static instance: ConfigManager;
   private config: AppConfig | null = null;
+  private lastConfigFile: string | undefined;
 
   private constructor() {}
 
@@ -17,6 +18,13 @@ export class ConfigManager {
   }
 
   public loadConfig(configFile?: string, context?: { requireDatabase?: boolean; requireS3?: boolean }): AppConfig {
+    // If we have a different config file than before, reload
+    // This fixes issues with tests using different config files
+    if (configFile && this.lastConfigFile !== configFile) {
+      this.config = null;
+      this.lastConfigFile = configFile;
+    }
+    
     if (this.config) {
       return this.config;
     }
@@ -50,18 +58,39 @@ export class ConfigManager {
     const database: Partial<DatabaseConfig> = {};
     const s3: Partial<S3Config> = {};
 
-    // Database configuration
-    if (process.env.DB_HOST) database.host = process.env.DB_HOST;
-    if (process.env.DB_PORT) database.port = parseInt(process.env.DB_PORT, 10);
-    if (process.env.DB_USER) database.user = process.env.DB_USER;
-    if (process.env.DB_PASSWORD) database.password = process.env.DB_PASSWORD;
-    if (process.env.DB_NAME) database.database = process.env.DB_NAME;
-    if (process.env.DB_SCHEMAS) database.schemas = process.env.DB_SCHEMAS.split(',').map(s => s.trim());
+    // Database configuration - support both DB_ and MYSQL_ prefixes
+    if (process.env.DB_HOST || process.env.MYSQL_HOST) {
+      database.host = process.env.DB_HOST || process.env.MYSQL_HOST;
+    }
+    if (process.env.DB_PORT || process.env.MYSQL_PORT) {
+      database.port = parseInt(process.env.DB_PORT || process.env.MYSQL_PORT || '3306', 10);
+    }
+    if (process.env.DB_USER || process.env.MYSQL_USER) {
+      database.user = process.env.DB_USER || process.env.MYSQL_USER;
+    }
+    if (process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD) {
+      database.password = process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD;
+    }
+    if (process.env.DB_NAME || process.env.MYSQL_DATABASE) {
+      database.database = process.env.DB_NAME || process.env.MYSQL_DATABASE;
+    }
+    if (process.env.DB_SCHEMAS || process.env.MYSQL_SCHEMAS) {
+      const schemas = process.env.DB_SCHEMAS || process.env.MYSQL_SCHEMAS;
+      if (schemas) {
+        database.schemas = schemas.split(',').map(s => s.trim());
+      }
+    }
 
-    // S3 configuration
-    if (process.env.AWS_ACCESS_KEY_ID) s3.accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-    if (process.env.AWS_SECRET_ACCESS_KEY) s3.secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-    if (process.env.AWS_DEFAULT_REGION) s3.region = process.env.AWS_DEFAULT_REGION;
+    // S3 configuration - support both S3_ and AWS_ prefixes
+    if (process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID) {
+      s3.accessKeyId = process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
+    }
+    if (process.env.S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY) {
+      s3.secretAccessKey = process.env.S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+    }
+    if (process.env.S3_REGION || process.env.AWS_DEFAULT_REGION) {
+      s3.region = process.env.S3_REGION || process.env.AWS_DEFAULT_REGION;
+    }
     if (process.env.S3_BUCKET) s3.bucket = process.env.S3_BUCKET;
     if (process.env.S3_KEY) s3.key = process.env.S3_KEY;
     if (process.env.S3_ENDPOINT_URL) s3.endpointUrl = process.env.S3_ENDPOINT_URL;
@@ -73,14 +102,18 @@ export class ConfigManager {
   }
 
   private mergeConfigs(fileConfig: Partial<AppConfig>, envConfig: Partial<AppConfig>): AppConfig {
+    // For database name specifically, prefer file config if explicitly set
+    // This allows tests and scripts to override the database via config file
+    const database = fileConfig.database?.database || envConfig.database?.database;
+    
     return {
       database: {
         host: envConfig.database?.host || fileConfig.database?.host || '',
         port: envConfig.database?.port || fileConfig.database?.port || 3306,
         user: envConfig.database?.user || fileConfig.database?.user || '',
         password: envConfig.database?.password || fileConfig.database?.password || '',
-        database: envConfig.database?.database || fileConfig.database?.database,
-        schemas: envConfig.database?.schemas || fileConfig.database?.schemas
+        database: database,
+        schemas: fileConfig.database?.schemas || envConfig.database?.schemas
       },
       s3: {
         accessKeyId: envConfig.s3?.accessKeyId || fileConfig.s3?.accessKeyId || '',
@@ -103,15 +136,15 @@ export class ConfigManager {
 
     // Validate database config only if required
     if (requireDatabase) {
-      if (!config.database.host) errors.push('Database host is required (DB_HOST)');
-      if (!config.database.user) errors.push('Database user is required (DB_USER)');
-      if (!config.database.password) errors.push('Database password is required (DB_PASSWORD)');
+      if (!config.database.host) errors.push('Database host is required (DB_HOST or MYSQL_HOST)');
+      if (!config.database.user) errors.push('Database user is required (DB_USER or MYSQL_USER)');
+      if (!config.database.password) errors.push('Database password is required (DB_PASSWORD or MYSQL_PASSWORD)');
     }
 
     // Validate S3 config only if required
     if (requireS3) {
-      if (!config.s3.accessKeyId) errors.push('AWS access key ID is required (AWS_ACCESS_KEY_ID)');
-      if (!config.s3.secretAccessKey) errors.push('AWS secret access key is required (AWS_SECRET_ACCESS_KEY)');
+      if (!config.s3.accessKeyId) errors.push('AWS access key ID is required (S3_ACCESS_KEY_ID or AWS_ACCESS_KEY_ID)');
+      if (!config.s3.secretAccessKey) errors.push('AWS secret access key is required (S3_SECRET_ACCESS_KEY or AWS_SECRET_ACCESS_KEY)');
       if (!config.s3.bucket) errors.push('S3 bucket is required (S3_BUCKET)');
     }
 
@@ -135,5 +168,6 @@ export class ConfigManager {
 
   public reset(): void {
     this.config = null;
+    this.lastConfigFile = undefined;
   }
 }

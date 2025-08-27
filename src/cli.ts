@@ -18,6 +18,7 @@ program
   .description('Create a database backup and upload to S3')
   .option('-c, --config <file>', 'Configuration file path (JSON or YAML)')
   .option('-s, --schemas <schemas>', 'Comma-separated list of schemas to backup')
+  .option('-n, --name <name>', 'Custom backup name (without extension)')
   .option('-v, --verbose', 'Enable verbose output')
   .action(async (options) => {
     await backupCommand(options);

@@ -112,7 +112,45 @@ export class MySQLManager {
     });
   }
 
+  public async createDatabase(databaseName: string): Promise<void> {
+    const connection = await createConnection({
+      host: this.config.host,
+      port: this.config.port,
+      user: this.config.user,
+      password: this.config.password,
+      multipleStatements: true
+    });
+
+    try {
+      // Use backticks to handle special characters in database names
+      await connection.execute(`CREATE DATABASE IF NOT EXISTS \`${databaseName}\``);
+      console.log(`Database '${databaseName}' created or already exists`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to create database '${databaseName}': ${errorMessage}`);
+    } finally {
+      await connection.end();
+    }
+  }
+
   public async restoreBackup(backupPath: string, targetDatabase: string, progressCallback?: ProgressCallback): Promise<void> {
+    // Check if database exists, create if it doesn't
+    try {
+      const dbExists = await this.databaseExists(targetDatabase);
+      if (!dbExists) {
+        console.log(`Database '${targetDatabase}' does not exist, creating...`);
+        await this.createDatabase(targetDatabase);
+        // Verify it was created
+        const dbExistsAfter = await this.databaseExists(targetDatabase);
+        if (!dbExistsAfter) {
+          throw new Error(`Failed to create database '${targetDatabase}'`);
+        }
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Database preparation failed: ${errorMessage}`);
+    }
+    
     return new Promise((resolve, reject) => {
       if (!fs.existsSync(backupPath)) {
         reject(new Error(`Backup file not found: ${backupPath}`));

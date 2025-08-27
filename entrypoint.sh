@@ -7,10 +7,21 @@ if [ "$#" -gt 0 ] && [ "$1" = "mysqldump-s3" ]; then
   exec "$@"
 fi
 
+# Check if we're running Jest tests (npx jest)
+if [ "$#" -gt 0 ] && { [ "$1" = "npx" ] || [ "$1" = "npm" ] || [ "$1" = "node" ]; }; then
+  # Execute the command directly without validation
+  exec "$@"
+fi
+
 # If RESTORE is set to true, open a shell
 if [ "${RESTORE:-false}" = "true" ]; then
   echo "Opening a shell for restore operations..."
   exec /bin/bash
+fi
+
+# Skip entrypoint validation for tests
+if [ "${SKIP_ENTRYPOINT:-false}" = "true" ]; then
+  exec "$@"
 fi
 
 : "${DB_HOST:?DB_HOST is required}"

@@ -34,6 +34,7 @@ export interface BackupOptions {
   output?: string;
   verbose?: boolean;
   schemas?: string;
+  name?: string;
 }
 
 export interface ListOptions {

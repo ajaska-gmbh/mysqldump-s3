@@ -1,0 +1,113 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysqldump-s3-test-db
+    environment:
+      MYSQL_ROOT_PASSWORD: test_password
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpass
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-test-data:/var/lib/mysql
+      - ./test-mysql-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptest_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - test-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: mysqldump-s3-test-minio
+    command: server /data --console-address ":9091"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9090:9000"
+      - "9091:9091"
+    volumes:
+      - minio-test-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - test-network
+
+  createbucket:
+    image: minio/mc:latest
+    container_name: mysqldump-s3-test-mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      mc mb myminio/test-backups || true;
+      mc anonymous set public myminio/test-backups || true;
+      exit 0;
+      "
+    networks:
+      - test-network
+
+  app-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: mysqldump-s3-test-app
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      createbucket:
+        condition: service_completed_successfully
+    environment:
+      # MySQL settings (also add legacy DB_* vars for entrypoint compatibility)
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: testuser
+      DB_PASSWORD: testpass
+      DB_NAME: testdb
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpass
+      MYSQL_DATABASE: testdb
+      MYSQL_ROOT_PASSWORD: test_password
+      # S3 settings
+      S3_BUCKET: test-backups
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_FORCE_PATH_STYLE: "true"
+      # Test settings
+      NODE_ENV: test
+      CI: "true"
+      # Skip entrypoint validation for tests
+      SKIP_ENTRYPOINT: "true"
+    volumes:
+      - ./src:/app/src:ro
+      - ./package.json:/app/package.json:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      - ./jest.config.js:/app/jest.config.js:ro
+      - ./test-reports:/app/test-reports
+    networks:
+      - test-network
+    entrypoint: ["/entrypoint.sh"]
+    command: []
+
+networks:
+  test-network:
+    driver: bridge
+
+volumes:
+  mysql-test-data:
+  minio-test-data:

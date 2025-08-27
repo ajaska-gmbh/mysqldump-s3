@@ -1,0 +1,44 @@
+FROM node:20-slim
+
+RUN apt-get update && apt-get install -y \
+    default-mysql-client \
+    awscli \
+    ca-certificates \
+    wget \
+    tar \
+    procps \
+    pv \
+    --no-install-recommends && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install s5cmd v2.3.0
+RUN wget -qO- https://github.com/peak/s5cmd/releases/download/v2.3.0/s5cmd_2.3.0_Linux-64bit.tar.gz | tar xz && \
+    mv s5cmd /usr/local/bin/ && \
+    chmod +x /usr/local/bin/s5cmd
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev dependencies for testing)
+RUN npm ci
+
+COPY tsconfig.json ./
+COPY jest.config.js ./
+COPY jest.integration.config.js ./
+COPY src/ ./src/
+
+# Build the application including tests
+RUN npm run build
+
+# Make the CLI available globally
+RUN npm link
+
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
