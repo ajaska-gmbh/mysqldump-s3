@@ -86,8 +86,8 @@ describe('MySQLManager restore with EPIPE handling', () => {
         '-u', 'test',
         '-ptest',
         '--max_allowed_packet=1G',
-        '--net_buffer_length=1M',
-        '--init-command=SET SESSION FOREIGN_KEY_CHECKS=0, UNIQUE_CHECKS=0, AUTOCOMMIT=0',
+        '--net_buffer_length=16M',
+        '--init-command=SET max_allowed_packet=1073741824; SET FOREIGN_KEY_CHECKS=0; SET UNIQUE_CHECKS=0; SET AUTOCOMMIT=0;',
         'testdb'
       ], { stdio: ['pipe', 'inherit', 'pipe'] });
 
@@ -301,8 +301,8 @@ describe('MySQLManager restore with EPIPE handling', () => {
           '-u', 'test',
           '-ptest',
           '--max_allowed_packet=1G',
-          '--net_buffer_length=1M',
-          '--init-command=SET SESSION FOREIGN_KEY_CHECKS=0, UNIQUE_CHECKS=0, AUTOCOMMIT=0',
+          '--net_buffer_length=16M',
+          '--init-command=SET max_allowed_packet=1073741824; SET FOREIGN_KEY_CHECKS=0; SET UNIQUE_CHECKS=0; SET AUTOCOMMIT=0;',
           'newdb'
         ], { stdio: ['pipe', 'inherit', 'pipe'] });
 
