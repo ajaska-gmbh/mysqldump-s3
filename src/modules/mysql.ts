@@ -32,10 +32,9 @@ export class MySQLManager {
   }
 
   /**
-   * Attempts to set max_allowed_packet to 1GB globally.
-   * Returns true if successful (user has admin privileges), false otherwise.
+   * Gets the current global max_allowed_packet value.
    */
-  public async trySetMaxAllowedPacket(): Promise<boolean> {
+  public async getMaxAllowedPacket(): Promise<number> {
     const connection = await createConnection({
       host: this.config.host,
       port: this.config.port,
@@ -44,18 +43,64 @@ export class MySQLManager {
     });
 
     try {
+      const [rows] = await connection.execute('SELECT @@GLOBAL.max_allowed_packet as value');
+      return (rows as { value: number }[])[0].value;
+    } finally {
+      await connection.end();
+    }
+  }
+
+  /**
+   * Attempts to set max_allowed_packet to 1GB globally.
+   * Returns the original value if successful (to restore later), or null if failed.
+   */
+  public async trySetMaxAllowedPacket(): Promise<number | null> {
+    const connection = await createConnection({
+      host: this.config.host,
+      port: this.config.port,
+      user: this.config.user,
+      password: this.config.password
+    });
+
+    try {
+      // Get current value first
+      const [rows] = await connection.execute('SELECT @@GLOBAL.max_allowed_packet as value');
+      const originalValue = (rows as { value: number }[])[0].value;
+
       // Try to set global max_allowed_packet (requires SUPER or SYSTEM_VARIABLES_ADMIN privilege)
       await connection.execute(`SET GLOBAL max_allowed_packet = ${MAX_ALLOWED_PACKET_BYTES}`);
-      console.log('[MySQL] Successfully set max_allowed_packet to 1GB (admin privileges available)');
-      return true;
+      console.log(`[MySQL] Set max_allowed_packet to 1GB (was ${Math.round(originalValue / 1024 / 1024)}MB)`);
+      return originalValue;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes('Access denied') || errorMessage.includes('SUPER privilege') || errorMessage.includes('SYSTEM_VARIABLES_ADMIN')) {
-        console.log('[MySQL] Cannot set max_allowed_packet globally (no admin privileges) - using fallback net_buffer_length');
+        console.log('[MySQL] Cannot set max_allowed_packet globally (no admin privileges) - using default server setting');
       } else {
         console.log(`[MySQL] Warning: Could not set max_allowed_packet: ${errorMessage}`);
       }
-      return false;
+      return null;
+    } finally {
+      await connection.end();
+    }
+  }
+
+  /**
+   * Restores max_allowed_packet to its original value.
+   */
+  public async restoreMaxAllowedPacket(originalValue: number): Promise<void> {
+    const connection = await createConnection({
+      host: this.config.host,
+      port: this.config.port,
+      user: this.config.user,
+      password: this.config.password
+    });
+
+    try {
+      await connection.execute(`SET GLOBAL max_allowed_packet = ${originalValue}`);
+      console.log(`[MySQL] Restored max_allowed_packet to ${Math.round(originalValue / 1024 / 1024)}MB`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.log(`[MySQL] Warning: Could not restore max_allowed_packet: ${errorMessage}`);
     } finally {
       await connection.end();
     }
@@ -223,7 +268,8 @@ export class MySQLManager {
     }
 
     // Try to set max_allowed_packet globally for large database support
-    const hasAdminPrivileges = await this.trySetMaxAllowedPacket();
+    // Returns the original value if successful, null if no admin privileges
+    const originalMaxAllowedPacket = await this.trySetMaxAllowedPacket();
 
     return new Promise((resolve, reject) => {
       if (!fs.existsSync(backupPath)) {
@@ -245,14 +291,11 @@ export class MySQLManager {
         chunkSize: GZIP_CHUNK_SIZE
       });
 
-      // Build init command based on whether we have admin privileges
-      // If we have admin privileges, we already set max_allowed_packet globally
-      // If not, we rely on the server's default (and use smaller batches during backup)
-      const initCommand = hasAdminPrivileges
-        ? 'SET max_allowed_packet=1073741824; SET FOREIGN_KEY_CHECKS=0; SET UNIQUE_CHECKS=0; SET AUTOCOMMIT=0;'
-        : 'SET FOREIGN_KEY_CHECKS=0; SET UNIQUE_CHECKS=0; SET AUTOCOMMIT=0;';
+      // Init command for restore optimizations
+      // Note: max_allowed_packet is set globally (if we have admin privileges), not per-session
+      const initCommand = 'SET FOREIGN_KEY_CHECKS=0; SET UNIQUE_CHECKS=0; SET AUTOCOMMIT=0;';
 
-      console.log(`[MySQL] Starting restore with${hasAdminPrivileges ? '' : 'out'} admin privileges`);
+      console.log(`[MySQL] Starting restore with${originalMaxAllowedPacket !== null ? '' : 'out'} admin privileges`);
 
       // Build mysql arguments optimized for large databases
       const mysql = spawn('mysql', [
@@ -276,19 +319,27 @@ export class MySQLManager {
       let error = '';
       let isResolved = false;
 
+      // Helper to restore max_allowed_packet if we changed it
+      const restorePacketSize = async () => {
+        if (originalMaxAllowedPacket !== null) {
+          await this.restoreMaxAllowedPacket(originalMaxAllowedPacket);
+        }
+      };
+
       // Set dynamic timeout based on file size
-      const timeoutId = setTimeout(() => {
+      const timeoutId = setTimeout(async () => {
         if (!isResolved) {
           isResolved = true;
           input.destroy();
           gunzip.destroy();
           mysql.kill('SIGTERM');
+          await restorePacketSize();
           const timeoutMinutes = Math.round(dynamicTimeout / 60000);
           reject(new Error(`Restore operation timed out after ${timeoutMinutes} minutes`));
         }
       }, dynamicTimeout);
 
-      const handleError = (err: Error & { code?: string }, source: string) => {
+      const handleError = async (err: Error & { code?: string }, source: string) => {
         if (!isResolved) {
           // Special handling for EPIPE errors
           if (err.code === 'EPIPE') {
@@ -297,20 +348,22 @@ export class MySQLManager {
             // Don't reject immediately as this might be normal termination
             return;
           }
-          
+
           isResolved = true;
           clearTimeout(timeoutId);
           input.destroy();
           gunzip.destroy();
           mysql.kill('SIGTERM');
+          await restorePacketSize();
           reject(new Error(`${source}: ${err.message}`));
         }
       };
 
-      const handleSuccess = () => {
+      const handleSuccess = async () => {
         if (!isResolved) {
           isResolved = true;
           clearTimeout(timeoutId);
+          await restorePacketSize();
           if (progressCallback) {
             progressCallback({ loaded: totalSize, total: totalSize, percentage: 100 });
           }
@@ -345,11 +398,12 @@ export class MySQLManager {
         handleError(err as Error & { code?: string }, 'Failed to start mysql');
       });
 
-      mysql.on('close', (code) => {
+      mysql.on('close', async (code) => {
         if (!isResolved) {
           if (code !== 0) {
             isResolved = true;
             clearTimeout(timeoutId);
+            await restorePacketSize();
             reject(new Error(`MySQL process failed: mysql exited with code ${code}: ${error}`));
           } else {
             handleSuccess();
