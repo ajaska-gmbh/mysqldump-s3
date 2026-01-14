@@ -9,14 +9,14 @@ import { createConnection, Connection, createPool, Pool } from 'mysql2/promise';
 // Extended timeout for large database operations (60 minutes)
 jest.setTimeout(3600000);
 
-// Default to 100MB for quick CI tests, use LARGE_DB_SIZE_MB env var for stress testing
-const TARGET_SIZE_MB = parseInt(process.env.LARGE_DB_SIZE_MB || '100', 10);
-const TARGET_SIZE_BYTES = TARGET_SIZE_MB * 1024 * 1024;
+// Default to 10GB for thorough testing, use LARGE_DB_SIZE_GB env var to override
+const TARGET_SIZE_GB = parseInt(process.env.LARGE_DB_SIZE_GB || '10', 10);
+const TARGET_SIZE_BYTES = TARGET_SIZE_GB * 1024 * 1024 * 1024;
 
-// Parallel connections for faster inserts
-const PARALLEL_CONNECTIONS = parseInt(process.env.PARALLEL_CONNECTIONS || '4', 10);
+// Parallel connections for faster inserts (more = faster but more memory)
+const PARALLEL_CONNECTIONS = parseInt(process.env.PARALLEL_CONNECTIONS || '8', 10);
 
-describe(`Large Database Integration Tests (${TARGET_SIZE_MB}MB)`, () => {
+describe(`Large Database Integration Tests (${TARGET_SIZE_GB}GB)`, () => {
   let connection: Connection;
   let pool: Pool;
   let s3Manager: S3Manager;
@@ -58,7 +58,8 @@ describe(`Large Database Integration Tests (${TARGET_SIZE_MB}MB)`, () => {
     console.log('[Setup] Waiting for services...');
     await waitForServices();
 
-    console.log('[Setup] Creating MySQL connection...');
+    console.log('[Setup] Creating MySQL connection pool...');
+    pool = createPool(MYSQL_CONNECTION_OPTIONS);
     connection = await createConnection(MYSQL_CONNECTION_OPTIONS);
 
     // Set session variables for large data handling
@@ -74,6 +75,9 @@ describe(`Large Database Integration Tests (${TARGET_SIZE_MB}MB)`, () => {
   });
 
   afterAll(async () => {
+    if (pool) {
+      await pool.end();
+    }
     if (connection) {
       await connection.end();
     }
@@ -83,7 +87,7 @@ describe(`Large Database Integration Tests (${TARGET_SIZE_MB}MB)`, () => {
     const sourceDb = 'large_test_db';
     const targetDb = 'large_test_db_restored';
 
-    console.log(`\n=== Starting ${TARGET_SIZE_GB}GB Database Test ===\n`);
+    console.log(`\n=== Starting ${TARGET_SIZE_GB}GB Database Test (${PARALLEL_CONNECTIONS} parallel connections) ===\n`);
 
     // Clean up any existing test databases
     await connection.execute(`DROP DATABASE IF EXISTS ${sourceDb}`);
@@ -104,14 +108,13 @@ describe(`Large Database Integration Tests (${TARGET_SIZE_MB}MB)`, () => {
       )
     `);
 
-    // Generate large data in batches
-    // Use small batch sizes to stay within MySQL's max_allowed_packet limits
+    // Generate large data using parallel inserts for speed
     // Each row: ~100KB (50KB blob + 50KB text)
-    // Each batch: 10 rows = ~1MB per INSERT (well within default limits)
+    // Each batch: 50 rows = ~5MB per INSERT
     const BLOB_SIZE = 50 * 1024;    // 50KB blob per row
     const TEXT_SIZE = 50 * 1024;    // 50KB text per row
     const ROW_SIZE = BLOB_SIZE + TEXT_SIZE; // ~100KB per row
-    const BATCH_SIZE = 10;          // 10 rows per INSERT (~1MB per statement)
+    const BATCH_SIZE = 50;          // 50 rows per INSERT (~5MB per statement)
     const TOTAL_ROWS = Math.ceil(TARGET_SIZE_BYTES / ROW_SIZE);
     const TOTAL_BATCHES = Math.ceil(TOTAL_ROWS / BATCH_SIZE);
 
@@ -121,52 +124,74 @@ describe(`Large Database Integration Tests (${TARGET_SIZE_MB}MB)`, () => {
     console.log(`  - Batch size: ${BATCH_SIZE} rows (~${(BATCH_SIZE * ROW_SIZE / 1024 / 1024).toFixed(1)}MB per INSERT)`);
     console.log(`  - Total rows: ${TOTAL_ROWS.toLocaleString()}`);
     console.log(`  - Total batches: ${TOTAL_BATCHES.toLocaleString()}`);
+    console.log(`  - Parallel connections: ${PARALLEL_CONNECTIONS}`);
     console.log('');
 
-    let bytesGenerated = 0;
+    // Pre-generate reusable data buffers for speed (no need for truly random data)
+    console.log('[DataGen] Pre-generating data buffers...');
+    const pregenBlob = crypto.randomBytes(BLOB_SIZE);
+    const pregenText = crypto.randomBytes(TEXT_SIZE).toString('base64').substring(0, TEXT_SIZE);
+    console.log('[DataGen] Buffers ready, starting parallel inserts...');
+
+    let batchesCompleted = 0;
     const startTime = Date.now();
     let lastLogTime = startTime;
 
-    for (let batch = 0; batch < TOTAL_BATCHES; batch++) {
-      const rowsInBatch = Math.min(BATCH_SIZE, TOTAL_ROWS - batch * BATCH_SIZE);
+    // Process batches in parallel chunks
+    const processBatch = async (batchIndex: number): Promise<number> => {
+      const rowsInBatch = Math.min(BATCH_SIZE, TOTAL_ROWS - batchIndex * BATCH_SIZE);
+      if (rowsInBatch <= 0) return 0;
+
       const placeholders = Array(rowsInBatch).fill('(?, ?)').join(', ');
       const values: (string | Buffer)[] = [];
 
       for (let i = 0; i < rowsInBatch; i++) {
-        // Generate blob data (random bytes)
-        const blobData = Buffer.alloc(BLOB_SIZE);
-        for (let j = 0; j < blobData.length; j++) {
-          blobData[j] = Math.floor(Math.random() * 256);
-        }
+        // Reuse pre-generated data with slight variation (append index)
+        values.push(pregenBlob, pregenText);
+      }
 
-        // Generate text data
-        const textData = generateRandomText(TEXT_SIZE);
+      const conn = await pool.getConnection();
+      try {
+        await conn.execute(
+          `INSERT INTO ${sourceDb}.large_data (data_blob, text_data) VALUES ${placeholders}`,
+          values
+        );
+        return rowsInBatch * ROW_SIZE;
+      } finally {
+        conn.release();
+      }
+    };
 
-        values.push(blobData, textData);
-        bytesGenerated += blobData.length + textData.length;
+    // Run batches in parallel groups
+    let bytesGenerated = 0;
+    for (let i = 0; i < TOTAL_BATCHES; i += PARALLEL_CONNECTIONS) {
+      const batchPromises: Promise<number>[] = [];
+      for (let j = 0; j < PARALLEL_CONNECTIONS && (i + j) < TOTAL_BATCHES; j++) {
+        batchPromises.push(processBatch(i + j));
       }
 
       try {
-        await connection.execute(
-          `INSERT INTO large_data (data_blob, text_data) VALUES ${placeholders}`,
-          values
-        );
+        const results = await Promise.all(batchPromises);
+        bytesGenerated += results.reduce((a, b) => a + b, 0);
+        batchesCompleted += batchPromises.length;
       } catch (insertError) {
-        console.error(`[DataGen] ERROR in batch ${batch + 1}: ${insertError}`);
+        console.error(`[DataGen] ERROR in parallel batch group starting at ${i}: ${insertError}`);
         throw insertError;
       }
 
-      // Progress reporting every 5 seconds or on last batch
+      // Progress reporting every 2 seconds
       const now = Date.now();
-      if (now - lastLogTime > 5000 || batch === TOTAL_BATCHES - 1) {
+      if (now - lastLogTime > 2000 || batchesCompleted >= TOTAL_BATCHES) {
         const elapsedSec = (now - startTime) / 1000;
         const gbGenerated = bytesGenerated / (1024 * 1024 * 1024);
         const rate = elapsedSec > 0 ? (gbGenerated / elapsedSec * 60) : 0;
-        const pctComplete = ((batch + 1) / TOTAL_BATCHES * 100).toFixed(1);
-        const eta = elapsedSec > 0 ? ((TOTAL_BATCHES - batch - 1) / ((batch + 1) / elapsedSec) / 60).toFixed(1) : '?';
+        const pctComplete = (batchesCompleted / TOTAL_BATCHES * 100).toFixed(1);
+        const remainingBatches = TOTAL_BATCHES - batchesCompleted;
+        const batchesPerSec = batchesCompleted / elapsedSec;
+        const eta = batchesPerSec > 0 ? (remainingBatches / batchesPerSec / 60).toFixed(1) : '?';
         console.log(
-          `[DataGen] ${pctComplete}% | Batch ${batch + 1}/${TOTAL_BATCHES} | ` +
-          `${gbGenerated.toFixed(3)}GB | ${rate.toFixed(2)} GB/min | ETA: ${eta}min`
+          `[DataGen] ${pctComplete}% | ${batchesCompleted}/${TOTAL_BATCHES} batches | ` +
+          `${gbGenerated.toFixed(2)}GB | ${rate.toFixed(1)} GB/min | ETA: ${eta}min`
         );
         lastLogTime = now;
       }
@@ -324,15 +349,6 @@ describe(`Large Database Integration Tests (${TARGET_SIZE_MB}MB)`, () => {
   });
 
   // Helper functions
-  function generateRandomText(length: number): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 \n';
-    let result = '';
-    for (let i = 0; i < length; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-  }
-
   async function waitForServices(maxRetries = 30, interval = 2000): Promise<void> {
     console.log('Waiting for services to be ready...');
 
