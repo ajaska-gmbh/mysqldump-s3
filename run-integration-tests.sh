@@ -14,7 +14,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 COMPOSE_FILE="docker-compose.test.yml"
-TEST_TIMEOUT=300 # 5 minutes timeout
+TEST_TIMEOUT=3600 # 60 minutes timeout for large database tests (10GB+)
 CLEANUP_ON_FAILURE=${CLEANUP_ON_FAILURE:-true}
 VERBOSE=${VERBOSE:-false}
 DOCKER_COMPOSE_CMD=""  # Will be set during prerequisite check
