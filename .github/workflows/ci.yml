@@ -26,11 +26,44 @@ jobs:
           # Remove unnecessary tools to free up disk space for 10GB database tests
           echo "Disk space before cleanup:"
           df -h
+          # Large SDKs and runtimes (~25GB total)
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/graalvm
+          # Hosted tool cache - remove everything (~10GB)
+          sudo rm -rf /opt/hostedtoolcache/*
+          # Azure and cloud tools (~3GB)
+          sudo rm -rf /usr/share/az_*
+          sudo rm -rf /opt/az
+          sudo rm -rf /usr/share/gradle*
+          sudo rm -rf /usr/share/miniconda
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/local/share/chromium
+          # Additional large directories (~10GB)
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/share/rust
+          sudo rm -rf /usr/share/sbt
+          sudo rm -rf /opt/microsoft
+          sudo rm -rf /opt/pipx
+          sudo rm -rf /opt/google
+          sudo rm -rf /usr/lib/google-cloud-sdk
+          sudo rm -rf /usr/lib/jvm
+          sudo rm -rf /usr/lib/mono
+          sudo rm -rf /usr/lib/heroku
+          sudo rm -rf /usr/local/julia*
+          sudo rm -rf /usr/share/kotlinc
+          sudo rm -rf /usr/local/share/vcpkg
+          sudo rm -rf /home/runner/.cargo
+          sudo rm -rf /home/runner/.rustup
+          # Swap file (~4GB)
+          sudo swapoff -a || true
+          sudo rm -f /mnt/swapfile || true
+          # Docker cleanup
           sudo docker image prune -af
+          sudo docker system prune -af --volumes
           echo "Disk space after cleanup:"
           df -h
 
