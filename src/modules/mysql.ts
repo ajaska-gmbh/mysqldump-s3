@@ -391,7 +391,12 @@ export class MySQLManager {
 
       // Handle mysql process errors
       mysql.stderr.on('data', (data) => {
-        error += data.toString();
+        const msg = data.toString();
+        error += msg;
+        // Log errors immediately (filter out password warnings)
+        if (!msg.includes('Using a password on the command line')) {
+          console.error(`[MySQL] ${msg.trim()}`);
+        }
       });
 
       mysql.on('error', (err) => {
@@ -404,7 +409,7 @@ export class MySQLManager {
             isResolved = true;
             clearTimeout(timeoutId);
             await restorePacketSize();
-            reject(new Error(`MySQL process failed: mysql exited with code ${code}: ${error}`));
+            reject(new Error(`MySQL restore failed (exit code ${code}): ${error}`));
           } else {
             handleSuccess();
           }
