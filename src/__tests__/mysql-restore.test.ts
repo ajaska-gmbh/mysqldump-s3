@@ -176,7 +176,7 @@ describe('MySQLManager restore with EPIPE handling', () => {
 
       // This should reject when mysql exits with code 1
       await expect(mysqlManager.restoreBackup(tempFile, 'testdb'))
-        .rejects.toThrow('MySQL process failed: mysql exited with code 1');
+        .rejects.toThrow('MySQL restore failed (exit code 1)');
 
     } finally {
       // Clean up temp file

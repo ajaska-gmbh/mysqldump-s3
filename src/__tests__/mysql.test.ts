@@ -707,7 +707,7 @@ describe('MySQLManager', () => {
       });
 
       await expect(mysqlManager.restoreBackup('/tmp/backup.sql.gz', 'testdb'))
-        .rejects.toThrow('MySQL process failed: mysql exited with code 1');
+        .rejects.toThrow('MySQL restore failed (exit code 1)');
     });
   });
 });
