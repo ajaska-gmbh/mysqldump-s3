@@ -67,6 +67,75 @@ describe('MySQLManager', () => {
     });
   });
 
+  describe('trySetMaxAllowedPacket', () => {
+    it('should return true when user has admin privileges', async () => {
+      mockConnection.execute.mockResolvedValueOnce([[], []] as any);
+
+      const result = await mysqlManager.trySetMaxAllowedPacket();
+
+      expect(result).toBe(true);
+      expect(mockConnection.execute).toHaveBeenCalledWith(
+        'SET GLOBAL max_allowed_packet = 1073741824'
+      );
+      expect(mockConnection.end).toHaveBeenCalled();
+    });
+
+    it('should return false when user lacks SUPER privilege', async () => {
+      const error = new Error('Access denied; you need the SUPER privilege for this operation');
+      mockConnection.execute.mockRejectedValueOnce(error);
+
+      const result = await mysqlManager.trySetMaxAllowedPacket();
+
+      expect(result).toBe(false);
+      expect(mockConnection.end).toHaveBeenCalled();
+    });
+
+    it('should return false when user lacks SYSTEM_VARIABLES_ADMIN privilege', async () => {
+      const error = new Error('Access denied; you need SYSTEM_VARIABLES_ADMIN privilege');
+      mockConnection.execute.mockRejectedValueOnce(error);
+
+      const result = await mysqlManager.trySetMaxAllowedPacket();
+
+      expect(result).toBe(false);
+      expect(mockConnection.end).toHaveBeenCalled();
+    });
+
+    it('should return false on general access denied error', async () => {
+      const error = new Error('Access denied for user');
+      mockConnection.execute.mockRejectedValueOnce(error);
+
+      const result = await mysqlManager.trySetMaxAllowedPacket();
+
+      expect(result).toBe(false);
+      expect(mockConnection.end).toHaveBeenCalled();
+    });
+
+    it('should return false and log warning on other errors', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const error = new Error('Connection timeout');
+      mockConnection.execute.mockRejectedValueOnce(error);
+
+      const result = await mysqlManager.trySetMaxAllowedPacket();
+
+      expect(result).toBe(false);
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Warning: Could not set max_allowed_packet')
+      );
+      expect(mockConnection.end).toHaveBeenCalled();
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should close connection even on error', async () => {
+      const error = new Error('Access denied');
+      mockConnection.execute.mockRejectedValueOnce(error);
+
+      await mysqlManager.trySetMaxAllowedPacket();
+
+      expect(mockConnection.end).toHaveBeenCalled();
+    });
+  });
+
   describe('listDatabases', () => {
     it('should list databases excluding system databases', async () => {
       const mockRows = [
@@ -405,11 +474,63 @@ describe('MySQLManager', () => {
       mockConnection.execute.mockResolvedValue([[{ SCHEMA_NAME: 'testdb' }], []] as never);
     });
 
+    it('should use admin privileges init-command when trySetMaxAllowedPacket succeeds', async () => {
+      jest.spyOn(mysqlManager, 'databaseExists').mockResolvedValue(true);
+      jest.spyOn(mysqlManager, 'trySetMaxAllowedPacket').mockResolvedValue(true);
+
+      mockMysql.on.mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
+        if (event === 'close') {
+          setTimeout(() => handler(0), 10);
+        }
+        return mockMysql;
+      });
+
+      const restorePromise = mysqlManager.restoreBackup('/tmp/backup.sql.gz', 'testdb');
+
+      setImmediate(() => {
+        mockGunzip.emit('end');
+        mockMysql.stdin.emit('finish');
+      });
+
+      await restorePromise;
+
+      expect(spawn).toHaveBeenCalledWith('mysql', expect.arrayContaining([
+        expect.stringContaining('SET max_allowed_packet=1073741824')
+      ]), expect.anything());
+    });
+
+    it('should use fallback init-command when trySetMaxAllowedPacket fails', async () => {
+      jest.spyOn(mysqlManager, 'databaseExists').mockResolvedValue(true);
+      jest.spyOn(mysqlManager, 'trySetMaxAllowedPacket').mockResolvedValue(false);
+
+      mockMysql.on.mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
+        if (event === 'close') {
+          setTimeout(() => handler(0), 10);
+        }
+        return mockMysql;
+      });
+
+      const restorePromise = mysqlManager.restoreBackup('/tmp/backup.sql.gz', 'testdb');
+
+      setImmediate(() => {
+        mockGunzip.emit('end');
+        mockMysql.stdin.emit('finish');
+      });
+
+      await restorePromise;
+
+      // Should NOT contain SET max_allowed_packet in init-command
+      const spawnCall = (spawn as jest.Mock).mock.calls[0];
+      const initCommandArg = spawnCall[1].find((arg: string) => arg.startsWith('--init-command='));
+      expect(initCommandArg).not.toContain('max_allowed_packet');
+    });
+
     it('should handle restore timeout', async () => {
       jest.useFakeTimers();
 
-      // Mock databaseExists to skip async database check
+      // Mock databaseExists and trySetMaxAllowedPacket to skip async checks
       jest.spyOn(mysqlManager, 'databaseExists').mockResolvedValue(true);
+      jest.spyOn(mysqlManager, 'trySetMaxAllowedPacket').mockResolvedValue(true);
 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       mockMysql.on.mockImplementation((_event: string, _handler: (...args: unknown[]) => void) => {
@@ -419,7 +540,8 @@ describe('MySQLManager', () => {
 
       const restorePromise = mysqlManager.restoreBackup('/tmp/backup.sql.gz', 'testdb');
 
-      // Flush promises to complete databaseExists
+      // Flush promises to complete databaseExists and trySetMaxAllowedPacket
+      await Promise.resolve();
       await Promise.resolve();
 
       // Fast forward past the 30-minute timeout
@@ -434,6 +556,7 @@ describe('MySQLManager', () => {
 
     it('should handle backup file not found', async () => {
       jest.spyOn(mysqlManager, 'databaseExists').mockResolvedValue(true);
+      jest.spyOn(mysqlManager, 'trySetMaxAllowedPacket').mockResolvedValue(true);
       (fs.existsSync as jest.Mock).mockReturnValue(false);
 
       await expect(mysqlManager.restoreBackup('/tmp/nonexistent.sql.gz', 'testdb'))
@@ -442,6 +565,7 @@ describe('MySQLManager', () => {
 
     it('should handle gunzip error', async () => {
       jest.spyOn(mysqlManager, 'databaseExists').mockResolvedValue(true);
+      jest.spyOn(mysqlManager, 'trySetMaxAllowedPacket').mockResolvedValue(true);
 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       mockMysql.on.mockImplementation((_event: string, _handler: (...args: unknown[]) => void) => {
@@ -459,6 +583,7 @@ describe('MySQLManager', () => {
 
     it('should handle input stream read error', async () => {
       jest.spyOn(mysqlManager, 'databaseExists').mockResolvedValue(true);
+      jest.spyOn(mysqlManager, 'trySetMaxAllowedPacket').mockResolvedValue(true);
 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       mockMysql.on.mockImplementation((_event: string, _handler: (...args: unknown[]) => void) => {
@@ -496,6 +621,7 @@ describe('MySQLManager', () => {
     it('should throttle progress updates', async () => {
       jest.useFakeTimers();
       jest.spyOn(mysqlManager, 'databaseExists').mockResolvedValue(true);
+      jest.spyOn(mysqlManager, 'trySetMaxAllowedPacket').mockResolvedValue(true);
       const progressCallback = jest.fn();
 
       mockMysql.on.mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
@@ -507,7 +633,8 @@ describe('MySQLManager', () => {
 
       const restorePromise = mysqlManager.restoreBackup('/tmp/backup.sql.gz', 'testdb', progressCallback);
 
-      // Flush promises for databaseExists
+      // Flush promises for databaseExists and trySetMaxAllowedPacket
+      await Promise.resolve();
       await Promise.resolve();
 
       // Simulate rapid data chunks
@@ -536,9 +663,10 @@ describe('MySQLManager', () => {
     });
 
     it('should handle mysql spawn error', async () => {
-      // Mock databaseExists to return true to skip database creation
+      // Mock databaseExists and trySetMaxAllowedPacket to skip database creation
       jest.spyOn(mysqlManager, 'databaseExists').mockResolvedValueOnce(true);
-      
+      jest.spyOn(mysqlManager, 'trySetMaxAllowedPacket').mockResolvedValue(true);
+
       const error = new Error('mysql not found');
       mockMysql.on.mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
         if (event === 'error') {
@@ -552,9 +680,10 @@ describe('MySQLManager', () => {
     });
 
     it('should handle mysql stderr output', async () => {
-      // Mock databaseExists to return true to skip database creation
+      // Mock databaseExists and trySetMaxAllowedPacket to skip database creation
       jest.spyOn(mysqlManager, 'databaseExists').mockResolvedValueOnce(true);
-      
+      jest.spyOn(mysqlManager, 'trySetMaxAllowedPacket').mockResolvedValue(true);
+
       mockMysql.on.mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
         if (event === 'close') {
           setTimeout(() => {

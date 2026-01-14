@@ -6,7 +6,8 @@ import { DatabaseConfig, ProgressCallback } from '../types';
 
 // Constants for large database handling (supports databases up to 400GB+)
 const MAX_ALLOWED_PACKET = '1G';
-const NET_BUFFER_LENGTH = '1M';
+const MAX_ALLOWED_PACKET_BYTES = 1024 * 1024 * 1024; // 1GB in bytes
+const NET_BUFFER_LENGTH = '16M'; // 16MB batches - works with MySQL 8.0 default (64MB max_allowed_packet)
 // Stream buffer sizes optimized for large data
 const STREAM_HIGH_WATER_MARK = 16 * 1024 * 1024; // 16MB chunks
 const GZIP_CHUNK_SIZE = 4 * 1024 * 1024; // 4MB gzip chunks
@@ -28,6 +29,36 @@ export class MySQLManager {
 
     await connection.ping();
     await connection.end();
+  }
+
+  /**
+   * Attempts to set max_allowed_packet to 1GB globally.
+   * Returns true if successful (user has admin privileges), false otherwise.
+   */
+  public async trySetMaxAllowedPacket(): Promise<boolean> {
+    const connection = await createConnection({
+      host: this.config.host,
+      port: this.config.port,
+      user: this.config.user,
+      password: this.config.password
+    });
+
+    try {
+      // Try to set global max_allowed_packet (requires SUPER or SYSTEM_VARIABLES_ADMIN privilege)
+      await connection.execute(`SET GLOBAL max_allowed_packet = ${MAX_ALLOWED_PACKET_BYTES}`);
+      console.log('[MySQL] Successfully set max_allowed_packet to 1GB (admin privileges available)');
+      return true;
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('Access denied') || errorMessage.includes('SUPER privilege') || errorMessage.includes('SYSTEM_VARIABLES_ADMIN')) {
+        console.log('[MySQL] Cannot set max_allowed_packet globally (no admin privileges) - using fallback net_buffer_length');
+      } else {
+        console.log(`[MySQL] Warning: Could not set max_allowed_packet: ${errorMessage}`);
+      }
+      return false;
+    } finally {
+      await connection.end();
+    }
   }
 
   public async listDatabases(): Promise<string[]> {
@@ -191,6 +222,9 @@ export class MySQLManager {
       throw new Error(`Database preparation failed: ${errorMessage}`);
     }
 
+    // Try to set max_allowed_packet globally for large database support
+    const hasAdminPrivileges = await this.trySetMaxAllowedPacket();
+
     return new Promise((resolve, reject) => {
       if (!fs.existsSync(backupPath)) {
         reject(new Error(`Backup file not found: ${backupPath}`));
@@ -211,6 +245,15 @@ export class MySQLManager {
         chunkSize: GZIP_CHUNK_SIZE
       });
 
+      // Build init command based on whether we have admin privileges
+      // If we have admin privileges, we already set max_allowed_packet globally
+      // If not, we rely on the server's default (and use smaller batches during backup)
+      const initCommand = hasAdminPrivileges
+        ? 'SET max_allowed_packet=1073741824; SET FOREIGN_KEY_CHECKS=0; SET UNIQUE_CHECKS=0; SET AUTOCOMMIT=0;'
+        : 'SET FOREIGN_KEY_CHECKS=0; SET UNIQUE_CHECKS=0; SET AUTOCOMMIT=0;';
+
+      console.log(`[MySQL] Starting restore with${hasAdminPrivileges ? '' : 'out'} admin privileges`);
+
       // Build mysql arguments optimized for large databases
       const mysql = spawn('mysql', [
         '-h', this.config.host,
@@ -220,7 +263,7 @@ export class MySQLManager {
         // Large database optimizations
         `--max_allowed_packet=${MAX_ALLOWED_PACKET}`,
         `--net_buffer_length=${NET_BUFFER_LENGTH}`,
-        '--init-command=SET SESSION FOREIGN_KEY_CHECKS=0, UNIQUE_CHECKS=0, AUTOCOMMIT=0',
+        `--init-command=${initCommand}`,
         targetDatabase
       ], {
         stdio: ['pipe', 'inherit', 'pipe']
