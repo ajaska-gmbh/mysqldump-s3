@@ -201,10 +201,13 @@ run_unit_tests() {
 # Function to start test environment
 start_test_environment() {
     print_header "Starting Test Environment"
-    
+
+    echo "Building test container (forcing rebuild to ensure latest code)..."
+    ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE build --no-cache app-test
+
     echo "Pulling required Docker images..."
     ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE pull
-    
+
     echo "Starting MySQL and MinIO services..."
     ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE up -d mysql minio
     
@@ -252,9 +255,6 @@ start_test_environment() {
 # Function to run integration tests
 run_integration_tests() {
     print_header "Running Integration Tests"
-    
-    echo "Building test container..."
-    ${DOCKER_COMPOSE_CMD:-docker-compose} -f $COMPOSE_FILE build app-test
     
     echo -e "\n${YELLOW}Running integration tests (this may take a few minutes)...${NC}\n"
     

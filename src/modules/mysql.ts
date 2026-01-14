@@ -4,6 +4,16 @@ import * as zlib from 'zlib';
 import * as fs from 'fs';
 import { DatabaseConfig, ProgressCallback } from '../types';
 
+// Constants for large database handling (supports databases up to 400GB+)
+const MAX_ALLOWED_PACKET = '1G';
+const NET_BUFFER_LENGTH = '1M';
+// Stream buffer sizes optimized for large data
+const STREAM_HIGH_WATER_MARK = 16 * 1024 * 1024; // 16MB chunks
+const GZIP_CHUNK_SIZE = 4 * 1024 * 1024; // 4MB gzip chunks
+// Timeout: 1 minute per GB, minimum 30 minutes
+const TIMEOUT_PER_GB_MS = 60 * 1000;
+const MIN_TIMEOUT_MS = 30 * 60 * 1000;
+
 export class MySQLManager {
   constructor(private config: DatabaseConfig) {}
 
@@ -42,14 +52,22 @@ export class MySQLManager {
 
   public async createBackup(outputPath: string, progressCallback?: ProgressCallback): Promise<void> {
     return new Promise((resolve, reject) => {
+      // Build mysqldump arguments optimized for large databases (400GB+)
+      // These flags are compatible with MySQL 5.6+ and MariaDB
       const args = [
         '-h', this.config.host,
         '-P', this.config.port.toString(),
         '-u', this.config.user,
         `-p${this.config.password}`,
-        '--compress',
-        '--verbose',
-        '--lock-tables=false'
+        // Large database optimizations
+        `--max_allowed_packet=${MAX_ALLOWED_PACKET}`,
+        `--net_buffer_length=${NET_BUFFER_LENGTH}`,
+        '--quick',                    // Stream tables row-by-row instead of buffering
+        '--single-transaction',       // Consistent backup for InnoDB without locking
+        '--routines',                 // Include stored procedures and functions
+        '--triggers',                 // Include triggers
+        '--lock-tables=false',        // Don't lock tables (use single-transaction instead)
+        '--verbose'
       ];
 
       if (this.config.schemas && this.config.schemas.length > 0) {
@@ -60,24 +78,46 @@ export class MySQLManager {
         args.push('--all-databases');
       }
 
-      const mysqldump = spawn('mysqldump', args);
-      const gzip = zlib.createGzip();
-      const output = fs.createWriteStream(outputPath);
+      const mysqldump = spawn('mysqldump', args, {
+        // Use larger buffers for stdout
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env }
+      });
+
+      // Use larger gzip chunks for better performance with large data
+      const gzip = zlib.createGzip({
+        chunkSize: GZIP_CHUNK_SIZE,
+        level: 6  // Balanced compression level
+      });
+
+      const output = fs.createWriteStream(outputPath, {
+        highWaterMark: STREAM_HIGH_WATER_MARK
+      });
 
       let totalBytes = 0;
       let error = '';
+      let lastProgressUpdate = 0;
 
-      // Track progress if callback provided
+      // Track progress if callback provided - throttle for performance
       if (progressCallback) {
         gzip.on('data', (chunk) => {
           totalBytes += chunk.length;
-          progressCallback({ loaded: totalBytes });
+          const now = Date.now();
+          // Update progress every 500ms to avoid overwhelming the UI
+          if (now - lastProgressUpdate > 500) {
+            progressCallback({ loaded: totalBytes });
+            lastProgressUpdate = now;
+          }
         });
       }
 
-      // Handle mysqldump errors
+      // Handle mysqldump errors - filter out warnings
       mysqldump.stderr.on('data', (data) => {
-        error += data.toString();
+        const msg = data.toString();
+        // Filter out common warnings that aren't actual errors
+        if (!msg.includes('Warning:') && !msg.includes('-- Dumping')) {
+          error += msg;
+        }
       });
 
       mysqldump.on('error', (err) => {
@@ -150,7 +190,7 @@ export class MySQLManager {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Database preparation failed: ${errorMessage}`);
     }
-    
+
     return new Promise((resolve, reject) => {
       if (!fs.existsSync(backupPath)) {
         reject(new Error(`Backup file not found: ${backupPath}`));
@@ -162,36 +202,48 @@ export class MySQLManager {
       let processedBytes = 0;
       let lastProgressUpdate = 0;
 
+      // Calculate dynamic timeout based on file size (1 min per GB, minimum 30 min)
+      const fileSizeGB = totalSize / (1024 * 1024 * 1024);
+      const dynamicTimeout = Math.max(MIN_TIMEOUT_MS, fileSizeGB * TIMEOUT_PER_GB_MS);
+
+      // Use larger gunzip chunks for better performance with large data
       const gunzip = zlib.createGunzip({
-        chunkSize: 64 * 1024 // 64KB chunks for better performance
+        chunkSize: GZIP_CHUNK_SIZE
       });
-      
+
+      // Build mysql arguments optimized for large databases
       const mysql = spawn('mysql', [
         '-h', this.config.host,
         '-P', this.config.port.toString(),
         '-u', this.config.user,
         `-p${this.config.password}`,
+        // Large database optimizations
+        `--max_allowed_packet=${MAX_ALLOWED_PACKET}`,
+        `--net_buffer_length=${NET_BUFFER_LENGTH}`,
+        '--init-command=SET SESSION FOREIGN_KEY_CHECKS=0, UNIQUE_CHECKS=0, AUTOCOMMIT=0',
         targetDatabase
       ], {
         stdio: ['pipe', 'inherit', 'pipe']
       });
 
+      // Use larger read buffers for better throughput
       const input = fs.createReadStream(backupPath, {
-        highWaterMark: 64 * 1024 // 64KB read buffer
+        highWaterMark: STREAM_HIGH_WATER_MARK
       });
       let error = '';
       let isResolved = false;
-      
-      // Set a timeout for the entire operation (30 minutes)
+
+      // Set dynamic timeout based on file size
       const timeoutId = setTimeout(() => {
         if (!isResolved) {
           isResolved = true;
           input.destroy();
           gunzip.destroy();
           mysql.kill('SIGTERM');
-          reject(new Error('Restore operation timed out after 30 minutes'));
+          const timeoutMinutes = Math.round(dynamicTimeout / 60000);
+          reject(new Error(`Restore operation timed out after ${timeoutMinutes} minutes`));
         }
-      }, 30 * 60 * 1000);
+      }, dynamicTimeout);
 
       const handleError = (err: Error & { code?: string }, source: string) => {
         if (!isResolved) {
