@@ -18,7 +18,7 @@ env:
 jobs:
   test:
     name: Run Complete Test Suite
-    runs-on: ubuntu-latest-16core
+    runs-on: ubuntu-latest
     timeout-minutes: 120  # Extended timeout for large database tests
     steps:
       - name: Free up disk space
