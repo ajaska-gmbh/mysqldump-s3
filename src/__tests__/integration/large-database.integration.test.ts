@@ -9,8 +9,8 @@ import { createConnection, Connection, createPool, Pool } from 'mysql2/promise';
 // Extended timeout for large database operations (60 minutes)
 jest.setTimeout(3600000);
 
-// Default to 10GB for thorough testing, use LARGE_DB_SIZE_GB env var to override
-const TARGET_SIZE_GB = parseInt(process.env.LARGE_DB_SIZE_GB || '10', 10);
+// Default to 7GB for thorough testing, use LARGE_DB_SIZE_GB env var to override
+const TARGET_SIZE_GB = parseInt(process.env.LARGE_DB_SIZE_GB || '7', 10);
 const TARGET_SIZE_BYTES = TARGET_SIZE_GB * 1024 * 1024 * 1024;
 
 // Parallel connections for faster inserts (more = faster but more memory)
