@@ -1,10 +1,10 @@
-import { 
-  S3Client, 
-  GetObjectCommand, 
+import {
+  S3Client,
+  GetObjectCommand,
   ListObjectsV2Command,
-  HeadObjectCommand,
-  PutObjectCommand 
+  HeadObjectCommand
 } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 import * as fs from 'fs';
 import { S3Config, BackupInfo, ProgressCallback } from '../types';
 
@@ -29,8 +29,8 @@ export class S3Manager {
   }
 
   public async uploadFile(
-    filePath: string, 
-    key: string, 
+    filePath: string,
+    key: string,
     progressCallback?: ProgressCallback
   ): Promise<void> {
     if (!fs.existsSync(filePath)) {
@@ -39,9 +39,9 @@ export class S3Manager {
 
     const stats = fs.statSync(filePath);
     const fileSize = stats.size;
-    
-    // Read the entire file into memory
-    const fileContent = fs.readFileSync(filePath);
+
+    // Use streaming for all file sizes to avoid memory issues
+    const fileStream = fs.createReadStream(filePath);
 
     try {
       // Report initial progress
@@ -49,22 +49,43 @@ export class S3Manager {
         progressCallback({ loaded: 0, total: fileSize, percentage: 0 });
       }
 
-      // Upload using PutObjectCommand
-      const uploadCommand = new PutObjectCommand({
-        Bucket: this.config.bucket,
-        Key: key,
-        Body: fileContent,
-        ContentType: 'application/gzip',
-        ContentLength: fileSize
+      // Use multipart upload with streaming for large file support
+      const upload = new Upload({
+        client: this.s3Client,
+        params: {
+          Bucket: this.config.bucket,
+          Key: key,
+          Body: fileStream,
+          ContentType: 'application/gzip'
+        },
+        // 10MB part size for better performance with large files
+        partSize: 10 * 1024 * 1024,
+        // Allow up to 4 concurrent uploads
+        queueSize: 4,
+        // Leave as multipart for files over 5MB
+        leavePartsOnError: false
       });
 
-      await this.s3Client.send(uploadCommand);
-      
+      // Track upload progress
+      upload.on('httpUploadProgress', (progress) => {
+        if (progressCallback && progress.loaded !== undefined) {
+          const percentage = fileSize > 0 ? (progress.loaded / fileSize) * 100 : 0;
+          progressCallback({
+            loaded: progress.loaded,
+            total: fileSize,
+            percentage
+          });
+        }
+      });
+
+      await upload.done();
+
       // Report completion
       if (progressCallback) {
         progressCallback({ loaded: fileSize, total: fileSize, percentage: 100 });
       }
     } catch (error) {
+      fileStream.destroy();
       throw new Error(`Failed to upload to S3: ${error}`);
     }
   }
