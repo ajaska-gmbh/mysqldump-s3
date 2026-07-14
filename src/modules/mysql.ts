@@ -143,6 +143,7 @@ export class MySQLManager {
         '--routines',                 // Include stored procedures and functions
         '--triggers',                 // Include triggers
         '--lock-tables=false',        // Don't lock tables (use single-transaction instead)
+        ' --skip-lock-tables',
         '--verbose'
       ];
 
