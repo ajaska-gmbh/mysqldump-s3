@@ -35,7 +35,6 @@ program
     if (options.format && !['table', 'json'].includes(options.format)) {
       console.error(chalk.red('✗ Invalid format. Use "table" or "json"'));
       process.exit(1);
-      return;
     }
     await listCommand(options);
   });
