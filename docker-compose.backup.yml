@@ -1,0 +1,22 @@
+# Real backup run against RDS, uploading to OVH S3.
+# Usage: docker compose -f docker-compose.backup.yml run --rm backup
+# The entrypoint defaults to `mysqldump-s3 backup` when no command is given.
+services:
+  backup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mysqldump-s3-backup
+    storage_opt:
+      size: 75G
+    environment:
+      DB_HOST: eza-leads-1.calgme43oagr.eu-central-1.rds.amazonaws.com
+      DB_PORT: 3306
+      DB_USER: ajaskaadmin
+      DB_PASSWORD: a3aRDeq3VaD
+      DB_NAME: leads
+      # S3 settings
+      S3_BUCKET: mysql-dump-backups
+      S3_ENDPOINT_URL: https://s3.de.io.cloud.ovh.net
+      S3_ACCESS_KEY_ID: f907d333c6a1487e91ee64c3da1409b9
+      S3_SECRET_ACCESS_KEY: 0c757b10e18b41fba0b5625b151fdf2f

@@ -79,12 +79,15 @@ describe('MySQLManager restore with EPIPE handling', () => {
       // This should not throw even with EPIPE error
       await expect(mysqlManager.restoreBackup(tempFile, 'testdb')).resolves.toBeUndefined();
       
-      // Verify spawn was called with correct arguments
+      // Verify spawn was called with correct arguments (including large db optimizations)
       expect(spawn).toHaveBeenCalledWith('mysql', [
         '-h', 'localhost',
         '-P', '3306',
         '-u', 'test',
         '-ptest',
+        '--max_allowed_packet=1G',
+        '--net_buffer_length=16M',
+        '--init-command=SET FOREIGN_KEY_CHECKS=0; SET UNIQUE_CHECKS=0; SET AUTOCOMMIT=0;',
         'testdb'
       ], { stdio: ['pipe', 'inherit', 'pipe'] });
 
@@ -173,7 +176,7 @@ describe('MySQLManager restore with EPIPE handling', () => {
 
       // This should reject when mysql exits with code 1
       await expect(mysqlManager.restoreBackup(tempFile, 'testdb'))
-        .rejects.toThrow('MySQL process failed: mysql exited with code 1');
+        .rejects.toThrow('MySQL restore failed (exit code 1)');
 
     } finally {
       // Clean up temp file
@@ -291,12 +294,15 @@ describe('MySQLManager restore with EPIPE handling', () => {
         // Verify database creation was attempted
         expect(mysqlManager.createDatabase).toHaveBeenCalledWith('newdb');
         
-        // Verify the restore was attempted after database creation
+        // Verify the restore was attempted after database creation (with large db optimizations)
         expect(spawn).toHaveBeenCalledWith('mysql', [
           '-h', 'localhost',
           '-P', '3306',
           '-u', 'test',
           '-ptest',
+          '--max_allowed_packet=1G',
+          '--net_buffer_length=16M',
+          '--init-command=SET FOREIGN_KEY_CHECKS=0; SET UNIQUE_CHECKS=0; SET AUTOCOMMIT=0;',
           'newdb'
         ], { stdio: ['pipe', 'inherit', 'pipe'] });
 

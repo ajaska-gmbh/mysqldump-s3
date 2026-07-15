@@ -120,7 +120,7 @@ describe('Schema-specific backup functionality', () => {
         'schema1',
         'schema2',
         'schema3'
-      ]));
+      ]), expect.anything());
     });
 
     it('should use single database when no schemas but database is specified', async () => {
@@ -167,8 +167,8 @@ describe('Schema-specific backup functionality', () => {
 
       await mysqlManager.createBackup('/tmp/backup.sql.gz');
 
-      expect(spawn).toHaveBeenCalledWith('mysqldump', expect.arrayContaining(['mydb']));
-      expect(spawn).toHaveBeenCalledWith('mysqldump', expect.not.arrayContaining(['--databases']));
+      expect(spawn).toHaveBeenCalledWith('mysqldump', expect.arrayContaining(['mydb']), expect.anything());
+      expect(spawn).toHaveBeenCalledWith('mysqldump', expect.not.arrayContaining(['--databases']), expect.anything());
     });
 
     it('should use --all-databases when neither schemas nor database specified', async () => {
@@ -214,7 +214,7 @@ describe('Schema-specific backup functionality', () => {
 
       await mysqlManager.createBackup('/tmp/backup.sql.gz');
 
-      expect(spawn).toHaveBeenCalledWith('mysqldump', expect.arrayContaining(['--all-databases']));
+      expect(spawn).toHaveBeenCalledWith('mysqldump', expect.arrayContaining(['--all-databases']), expect.anything());
     });
 
     it('should prefer schemas over database when both are specified', async () => {
@@ -266,8 +266,8 @@ describe('Schema-specific backup functionality', () => {
         '--databases',
         'schema1',
         'schema2'
-      ]));
-      expect(spawn).toHaveBeenCalledWith('mysqldump', expect.not.arrayContaining(['mydb']));
+      ]), expect.anything());
+      expect(spawn).toHaveBeenCalledWith('mysqldump', expect.not.arrayContaining(['mydb']), expect.anything());
     });
   });
 
